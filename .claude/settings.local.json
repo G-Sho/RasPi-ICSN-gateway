@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/shono/dev/ESP32-ICSN-sensor-node/lib/ICSN/infrastructure/data_access/**)",
+      "Read(//c/Users/shono/dev/ESP32-ICSN-sensor-node/lib/ICSN/controller/**)",
+      "Read(//c/Users/shono/dev/ESP32-ICSN-sensor-node/src/**)",
+      "Read(//c/Users/shono/dev/ESP32-ICSN-bridge/src/**)",
+      "Bash(mkdir:*)",
+      "Bash(curl:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
