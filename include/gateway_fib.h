@@ -8,16 +8,16 @@ class GatewayFIB {
 public:
     GatewayFIB(int max_virtual_depth = 3);
 
-    // Register FIB entry
+    // FIBエントリ登録
     void save(const std::string& content_name, const std::set<std::string>& mac_addresses);
 
-    // Longest Prefix Match (LPM with TwoStage algorithm)
+    // 最長一致検索（TwoStageアルゴリズムによるLPM）
     std::set<std::string> lookup(const std::string& content_name);
 
-    // Remove entry
+    // エントリ削除
     void remove(const std::string& content_name);
 
-    // Check existence
+    // 存在確認
     bool find(const std::string& content_name);
 
 private:

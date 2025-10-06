@@ -6,7 +6,8 @@
       "Read(//c/Users/shono/dev/ESP32-ICSN-sensor-node/src/**)",
       "Read(//c/Users/shono/dev/ESP32-ICSN-bridge/src/**)",
       "Bash(mkdir:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Read(//c/Users/shono/dev/cefore-0.11.0/**)"
     ],
     "deny": [],
     "ask": []

@@ -1,7 +1,7 @@
 #include "packet_parser.h"
 #include <cstring>
 
-// CommunicationData structure from ESP32 (packed)
+// ESP32のCommunicationData構造体（packed）
 struct __attribute__((packed)) CommunicationData {
     char signalCode[10];
     uint8_t hopCount;
@@ -17,7 +17,7 @@ bool PacketParser::parse(const std::vector<uint8_t>& raw_data, SensorData& outpu
     CommunicationData comm_data;
     memcpy(&comm_data, raw_data.data(), sizeof(CommunicationData));
 
-    // Copy to output
+    // 出力にコピー
     strncpy(output.signal_code, comm_data.signalCode, 10);
     output.signal_code[9] = '\0';
 

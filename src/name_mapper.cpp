@@ -13,20 +13,20 @@ std::string NameMapper::addTimestamp(const std::string& icsn_content_name) {
     uint64_t timestamp = getCurrentTimeMs();
     std::ostringstream oss;
 
-    // Ensure the content name starts with '/'
+    // コンテンツ名が'/'で始まることを保証
     if (icsn_content_name.empty() || icsn_content_name[0] != '/') {
         oss << "/" << icsn_content_name;
     } else {
         oss << icsn_content_name;
     }
 
-    // Remove trailing '/' if exists
+    // 末尾の'/'があれば削除
     std::string name = oss.str();
     if (name.length() > 1 && name.back() == '/') {
         name.pop_back();
     }
 
-    // Add timestamp
+    // タイムスタンプ付加
     oss.str("");
     oss << name << "/" << timestamp;
 
@@ -34,13 +34,13 @@ std::string NameMapper::addTimestamp(const std::string& icsn_content_name) {
 }
 
 std::string NameMapper::removeTimestamp(const std::string& timestamped_name) {
-    // Find last '/'
+    // 最後の'/'を検索
     size_t last_slash = timestamped_name.rfind('/');
 
     if (last_slash == std::string::npos || last_slash == 0) {
         return timestamped_name;
     }
 
-    // Extract content name (without timestamp)
+    // コンテンツ名を抽出（タイムスタンプなし）
     return timestamped_name.substr(0, last_slash);
 }

@@ -67,18 +67,18 @@ bool CeforeInterface::publishData(const std::string& uri,
     memset(&opt, 0, sizeof(opt));
     memset(&params, 0, sizeof(params));
 
-    // Set name
+    // 名前設定
     params.name_len = cef_frame_conversion_uri_to_name(uri.c_str(), params.name);
     if (params.name_len <= 0) {
         std::cerr << "Invalid URI: " << uri << std::endl;
         return false;
     }
 
-    // Set chunk number
+    // チャンク番号設定
     params.chunk_num_f = 1;
     params.chunk_num = chunk_num;
 
-    // Set payload
+    // ペイロード設定
     if (payload.size() > CefC_Max_Length) {
         std::cerr << "Payload too large: " << payload.size() << std::endl;
         return false;
@@ -86,22 +86,22 @@ bool CeforeInterface::publishData(const std::string& uri,
     params.payload_len = payload.size();
     memcpy(params.payload, payload.data(), payload.size());
 
-    // Set expiry time
+    // 有効期限設定
     uint64_t now_ms = getCurrentTimeMs();
     params.expiry = now_ms + expiry_sec * 1000;
 
-    // Set cache time
+    // キャッシュ時間設定
     opt.cachetime_f = 1;
     opt.cachetime = now_ms + cache_time_sec * 1000;
 
-    // Create Content Object
+    // Content Object作成
     int cob_len = cef_frame_object_create(cob_buff, &opt, &params);
     if (cob_len < 0) {
         std::cerr << "cef_frame_object_create failed" << std::endl;
         return false;
     }
 
-    // Send to cefnetd
+    // cefnetdへ送信
     int res = cef_client_message_input(handle_, cob_buff, cob_len);
     if (res < 0) {
         std::cerr << "cef_client_message_input failed" << std::endl;
@@ -152,6 +152,6 @@ void CeforeInterface::receiveLoop() {
             }
         }
 
-        usleep(1000); // 1ms polling
+        usleep(1000); // 1msポーリング
     }
 }

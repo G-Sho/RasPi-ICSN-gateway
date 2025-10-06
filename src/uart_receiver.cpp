@@ -15,14 +15,14 @@ UARTReceiver::~UARTReceiver() {
 }
 
 void UARTReceiver::start() {
-    // Open UART device
+    // UARTデバイスを開く
     fd_ = open(device_.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
     if (fd_ < 0) {
         std::cerr << "Error opening " << device_ << ": " << strerror(errno) << std::endl;
         return;
     }
 
-    // Configure UART
+    // UART設定
     struct termios tty;
     memset(&tty, 0, sizeof(tty));
 
@@ -33,7 +33,7 @@ void UARTReceiver::start() {
         return;
     }
 
-    // Set baud rate
+    // ボーレート設定
     speed_t baud = B115200;
     if (baudrate_ == 9600) baud = B9600;
     else if (baudrate_ == 19200) baud = B19200;
@@ -44,7 +44,7 @@ void UARTReceiver::start() {
     cfsetospeed(&tty, baud);
     cfsetispeed(&tty, baud);
 
-    // 8N1 mode
+    // 8N1モード
     tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
     tty.c_cflag &= ~(PARENB | PARODD);
     tty.c_cflag &= ~CSTOPB;
@@ -67,7 +67,7 @@ void UARTReceiver::start() {
         return;
     }
 
-    // Start receive thread
+    // 受信スレッド開始
     running_ = true;
     recv_thread_ = std::thread(&UARTReceiver::receiveLoop, this);
 }
@@ -88,10 +88,10 @@ bool UARTReceiver::sendTxCommand(const std::string& mac, const std::vector<uint8
         return false;
     }
 
-    // Base64 encode
+    // Base64エンコード
     std::string encoded = base64_encode(data.data(), data.size());
 
-    // Format: TX:<MAC>|<Base64>\n
+    // フォーマット: TX:<MAC>|<Base64>\n
     std::string command = "TX:" + mac + "|" + encoded + "\n";
 
     ssize_t written = write(fd_, command.c_str(), command.size());
@@ -117,7 +117,7 @@ void UARTReceiver::receiveLoop() {
             read_buf[n] = '\0';
             buffer += read_buf;
 
-            // Process complete lines
+            // 完全な行を処理
             size_t pos;
             while ((pos = buffer.find('\n')) != std::string::npos) {
                 std::string line = buffer.substr(0, pos);
@@ -132,12 +132,12 @@ void UARTReceiver::receiveLoop() {
             std::cerr << "UART read error: " << strerror(errno) << std::endl;
             break;
         }
-        usleep(1000); // 1ms sleep
+        usleep(1000); // 1msスリープ
     }
 }
 
 bool UARTReceiver::parseLine(const std::string& line, RxPacket& packet) {
-    // Format: RX:<MAC>|<len>|<Base64>
+    // フォーマット: RX:<MAC>|<len>|<Base64>
     if (line.substr(0, 3) != "RX:") {
         return false;
     }
@@ -152,14 +152,14 @@ bool UARTReceiver::parseLine(const std::string& line, RxPacket& packet) {
         return false;
     }
 
-    // Extract MAC
+    // MAC抽出
     packet.sender_mac = line.substr(3, first_pipe - 3);
 
-    // Extract length
+    // 長さ抽出
     std::string len_str = line.substr(first_pipe + 1, second_pipe - first_pipe - 1);
     packet.data_len = std::stoi(len_str);
 
-    // Extract and decode Base64
+    // Base64抽出とデコード
     std::string encoded = line.substr(second_pipe + 1);
     std::string decoded = base64_decode(encoded);
 

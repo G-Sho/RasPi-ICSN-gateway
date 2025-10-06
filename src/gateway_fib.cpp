@@ -65,12 +65,12 @@ bool GatewayFIB::lookupEntry(const std::string& name, int prefixDepth, FIBEntry&
 }
 
 bool GatewayFIB::fibLpmLookup(const std::string& name, int nameDepth, int maxVirtualDepth, FIBEntry& outEntry) {
-    // Stage 1: Exact match
+    // ステージ1: 完全一致
     if (lookupEntry(name, nameDepth, outEntry)) {
         return true;
     }
 
-    // Stage 2: Longest prefix match
+    // ステージ2: 最長プレフィックス一致
     for (int depth = nameDepth - 1; depth > 0; depth--) {
         FIBEntry entry;
         if (lookupEntry(name, depth, entry)) {
@@ -79,7 +79,7 @@ bool GatewayFIB::fibLpmLookup(const std::string& name, int nameDepth, int maxVir
                 return true;
             }
 
-            // Virtual entry: check maximum depth
+            // 仮想エントリ: 最大深度をチェック
             if (nameDepth <= entry.maximumDepth + maxVirtualDepth) {
                 outEntry = entry;
                 return true;
@@ -102,7 +102,7 @@ int GatewayFIB::calculateDepth(const std::string& name) const {
         }
     }
 
-    // Adjust if name starts with '/'
+    // 名前が'/'で始まる場合は調整
     if (name[0] == '/') {
         depth--;
     }

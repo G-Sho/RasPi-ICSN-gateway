@@ -4,10 +4,10 @@
 
 class NameMapper {
 public:
-    // Add timestamp to ICSN content name
+    // ICSNコンテンツ名にタイムスタンプを付加
     std::string addTimestamp(const std::string& icsn_content_name);
 
-    // Extract ICSN content name from timestamped name
+    // タイムスタンプ付き名前からICSNコンテンツ名を抽出
     std::string removeTimestamp(const std::string& timestamped_name);
 
 private:

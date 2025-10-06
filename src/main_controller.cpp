@@ -5,7 +5,7 @@
 #include <signal.h>
 #include <unistd.h>
 
-// CommunicationData structure for ESP-NOW protocol
+// ESP-NOWプロトコル用のCommunicationData構造体
 struct __attribute__((packed)) CommunicationData {
     char signalCode[10];
     uint8_t hopCount;
@@ -20,14 +20,14 @@ MainController::~MainController() {
 }
 
 bool MainController::initialize(const std::string& uart_device, int baudrate) {
-    // Create components
+    // コンポーネント作成
     uart_ = std::make_unique<UARTReceiver>(uart_device, baudrate);
     parser_ = std::make_unique<PacketParser>();
     cefore_ = std::make_unique<CeforeInterface>();
     name_mapper_ = std::make_unique<NameMapper>();
     fib_ = std::make_unique<GatewayFIB>();
 
-    // Initialize CEFORE
+    // CEFORE初期化
     if (!cefore_->init()) {
         std::cerr << "CEFORE initialization failed" << std::endl;
         return false;
@@ -38,7 +38,7 @@ bool MainController::initialize(const std::string& uart_device, int baudrate) {
         return false;
     }
 
-    // Set callbacks
+    // コールバック設定
     uart_->setRxCallback([this](const RxPacket& packet) {
         onRxPacket(packet);
     });
@@ -47,10 +47,10 @@ bool MainController::initialize(const std::string& uart_device, int baudrate) {
         onInterest(uri, chunk_num);
     });
 
-    // Start UART receiving
+    // UART受信開始
     uart_->start();
 
-    // Start CEFORE Interest receiving
+    // CEFORE Interest受信開始
     cefore_->startReceiving();
 
     std::cout << "Gateway initialized successfully" << std::endl;
@@ -60,7 +60,7 @@ bool MainController::initialize(const std::string& uart_device, int baudrate) {
 void MainController::run() {
     std::cout << "Gateway running... Press Ctrl+C to stop" << std::endl;
 
-    // Main loop
+    // メインループ
     while (true) {
         sleep(1);
     }
@@ -90,15 +90,15 @@ void MainController::onRxPacket(const RxPacket& packet) {
     std::cout << "Received " << data.signal_code << " from " << packet.sender_mac
               << ": " << data.content_name << " = " << data.content << std::endl;
 
-    // Check if this is DATA packet
+    // DATAパケットかチェック
     if (std::string(data.signal_code) == "DATA") {
-        // Learn FIB entry (content_name -> MAC)
+        // FIBエントリ学習（content_name → MAC）
         fib_->save(data.content_name, {packet.sender_mac});
 
-        // Add timestamp to content name
+        // コンテンツ名にタイムスタンプ付加
         std::string timestamped_uri = name_mapper_->addTimestamp(data.content_name);
 
-        // Publish to CEFORE
+        // CEFOREに公開
         std::vector<uint8_t> payload(data.content, data.content + strlen(data.content));
         if (cefore_->publishData(timestamped_uri, payload)) {
             std::cout << "Published to CEFORE: " << timestamped_uri << std::endl;
@@ -111,10 +111,10 @@ void MainController::onRxPacket(const RxPacket& packet) {
 void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
     std::cout << "Received Interest: " << uri << " (chunk=" << chunk_num << ")" << std::endl;
 
-    // Remove timestamp to get ICSN content name
+    // タイムスタンプを除去してICSNコンテンツ名取得
     std::string content_name = name_mapper_->removeTimestamp(uri);
 
-    // FIB lookup (longest prefix match)
+    // FIB検索（最長プレフィックス一致）
     std::set<std::string> macs = fib_->lookup(content_name);
 
     if (macs.empty()) {
@@ -122,7 +122,7 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
         return;
     }
 
-    // Create ICSN Interest packet
+    // ICSN Interestパケット作成
     CommunicationData interest_packet;
     memset(&interest_packet, 0, sizeof(interest_packet));
 
@@ -131,11 +131,11 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
     strncpy(interest_packet.contentName, content_name.c_str(), 99);
     strncpy(interest_packet.content, "N/A", 19);
 
-    // Serialize to binary
+    // バイナリにシリアライズ
     std::vector<uint8_t> binary_data(sizeof(CommunicationData));
     memcpy(binary_data.data(), &interest_packet, sizeof(CommunicationData));
 
-    // Forward Interest to each MAC address
+    // 各MACアドレスにInterest転送
     for (const auto& mac : macs) {
         if (uart_->sendTxCommand(mac, binary_data)) {
             std::cout << "Forwarded Interest to " << mac << ": " << content_name << std::endl;

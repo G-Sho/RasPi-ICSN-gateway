@@ -17,18 +17,18 @@ public:
     bool connect();
     void disconnect();
 
-    // Data packet transmission (Content Object publication)
+    // Dataパケット送信（Content Object公開）
     bool publishData(const std::string& uri,
                      const std::vector<uint8_t>& payload,
                      uint32_t chunk_num = 0,
                      uint32_t cache_time_sec = 300,
                      uint32_t expiry_sec = 3600);
 
-    // Start/stop Interest receiving thread
+    // Interest受信スレッド開始・停止
     void startReceiving();
     void stopReceiving();
 
-    // Set Interest receive callback
+    // Interest受信コールバック設定
     void setInterestCallback(std::function<void(const std::string& uri, uint32_t chunk_num)> callback);
 
 private:

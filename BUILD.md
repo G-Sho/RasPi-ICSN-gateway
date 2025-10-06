@@ -1,119 +1,119 @@
-# Build Instructions
+# ビルド手順
 
-## Prerequisites
+## 前提条件
 
-### Required Libraries
+### 必要なライブラリ
 
 1. **CEFORE** (libcefore)
    ```bash
-   # Install CEFORE from source or package manager
-   # See: https://cefore.net/
+   # CEFOREをソースまたはパッケージマネージャからインストール
+   # 参照: https://cefore.net/
    ```
 
-2. **Build Tools**
+2. **ビルドツール**
    ```bash
    sudo apt-get update
    sudo apt-get install -y build-essential cmake git
    ```
 
-## Build Steps
+## ビルド手順
 
-1. Clone the repository
+1. リポジトリをクローン
    ```bash
    git clone <repository-url>
    cd RasPi-ICSN-gateway
    ```
 
-2. Create build directory
+2. ビルドディレクトリを作成
    ```bash
    mkdir build
    cd build
    ```
 
-3. Configure with CMake
+3. CMakeで設定
    ```bash
    cmake ..
    ```
 
-4. Build
+4. ビルド
    ```bash
    make
    ```
 
-5. Install (optional)
+5. インストール（オプション）
    ```bash
    sudo make install
    ```
 
-## Running
+## 実行方法
 
-### Basic Usage
+### 基本的な使い方
 
 ```bash
 sudo ./gateway /dev/serial0 115200
 ```
 
-### Command Line Arguments
+### コマンドライン引数
 
-- `argv[1]`: UART device path (default: `/dev/serial0`)
-- `argv[2]`: Baudrate (default: `115200`)
+- `argv[1]`: UARTデバイスパス（デフォルト: `/dev/serial0`）
+- `argv[2]`: ボーレート（デフォルト: `115200`）
 
-### Example
+### 実行例
 
 ```bash
-# Using default settings
+# デフォルト設定で実行
 sudo ./gateway
 
-# Custom UART device and baudrate
+# カスタムUARTデバイスとボーレートで実行
 sudo ./gateway /dev/ttyUSB0 115200
 ```
 
-## UART Configuration on Raspberry Pi
+## Raspberry PiのUART設定
 
-1. Enable UART on GPIO pins
+1. GPIOピンのUARTを有効化
    ```bash
    sudo raspi-config
-   # Navigate to: Interface Options -> Serial Port
-   # Disable login shell over serial: No
-   # Enable serial port hardware: Yes
+   # 移動先: Interface Options -> Serial Port
+   # シリアルログインシェルを無効化: No
+   # シリアルポートハードウェアを有効化: Yes
    ```
 
-2. Edit `/boot/config.txt`
+2. `/boot/config.txt`を編集
    ```bash
    sudo nano /boot/config.txt
    ```
 
-   Add or modify:
+   以下を追加または変更:
    ```
    enable_uart=1
    dtoverlay=disable-bt
    ```
 
-3. Reboot
+3. 再起動
    ```bash
    sudo reboot
    ```
 
-## Troubleshooting
+## トラブルシューティング
 
-### CEFORE not found
+### CEFOREが見つからない場合
 
-If CMake cannot find CEFORE:
+CMakeがCEFOREを見つけられない場合:
 ```bash
-# Specify CEFORE install path
+# CEFOREのインストールパスを指定
 cmake -DCEFORE_INCLUDE=/path/to/cefore/include -DCEFORE_LIB=/path/to/cefore/lib ..
 ```
 
-### UART permission denied
+### UART権限エラー
 
 ```bash
 sudo usermod -a -G dialout $USER
-# Logout and login again
+# ログアウトして再度ログイン
 ```
 
-### cefnetd not running
+### cefnetdが起動していない場合
 
-Make sure cefnetd is running before starting the gateway:
+ゲートウェイを起動する前にcefnetdが起動していることを確認:
 ```bash
 sudo cefnetd
 ```
