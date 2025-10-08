@@ -60,5 +60,22 @@ target_link_libraries(gateway
     Threads::Threads
 )
 
+# テストプログラム用のソースファイル
+set(TEST_SOURCES
+    src/test_uart_parser.cpp
+    src/uart_receiver.cpp
+    src/packet_parser.cpp
+    include/third_party/base64.cpp
+)
+
+# テスト実行ファイル
+add_executable(test_uart_parser ${TEST_SOURCES})
+
+# テストプログラムのリンクライブラリ
+target_link_libraries(test_uart_parser
+    Threads::Threads
+)
+
 # インストールターゲット
 install(TARGETS gateway DESTINATION bin)
+install(TARGETS test_uart_parser DESTINATION bin)
