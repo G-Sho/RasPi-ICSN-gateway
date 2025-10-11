@@ -20,6 +20,8 @@ MainController::~MainController() {
 }
 
 bool MainController::initialize(const std::string& uart_device, int baudrate) {
+    std::cout << "[INFO] Creating components..." << std::endl;
+
     // コンポーネント作成
     uart_ = std::make_unique<UARTReceiver>(uart_device, baudrate);
     parser_ = std::make_unique<PacketParser>();
@@ -27,14 +29,10 @@ bool MainController::initialize(const std::string& uart_device, int baudrate) {
     name_mapper_ = std::make_unique<NameMapper>();
     fib_ = std::make_unique<GatewayFIB>();
 
-    // CEFORE初期化
+    // CEFORE初期化（cefpyco方式: init()でconnectまで完了）
+    std::cout << "[INFO] Initializing CEFORE..." << std::endl;
     if (!cefore_->init()) {
-        std::cerr << "CEFORE initialization failed" << std::endl;
-        return false;
-    }
-
-    if (!cefore_->connect()) {
-        std::cerr << "CEFORE connection failed" << std::endl;
+        std::cerr << "[ERROR] CEFORE initialization failed" << std::endl;
         return false;
     }
 
@@ -50,32 +48,47 @@ bool MainController::initialize(const std::string& uart_device, int baudrate) {
     // UART受信開始
     uart_->start();
 
-    // CEFORE Interest受信開始
-    cefore_->startReceiving();
-
-    std::cout << "Gateway initialized successfully" << std::endl;
+    std::cout << "[INFO] Gateway initialized successfully" << std::endl;
     return true;
 }
 
 void MainController::run() {
-    std::cout << "Gateway running... Press Ctrl+C to stop" << std::endl;
+    std::cout << "[INFO] Gateway running... Press Ctrl+C to stop" << std::endl;
 
-    // メインループ
+    // cefpyco方式: ポーリングで受信
+    const int BUFFER_SIZE = 65536;
+    uint8_t buffer[BUFFER_SIZE];
+
     while (true) {
-        sleep(1);
+        // 1秒タイムアウトで受信
+        int len = cefore_->receive(buffer, BUFFER_SIZE, 1000);
+
+        if (len > 0) {
+            // Interest受信
+            std::string uri;
+            uint32_t chunk_num;
+
+            if (cefore_->parseInterest(buffer, len, uri, chunk_num)) {
+                // コールバック呼び出し
+                onInterest(uri, chunk_num);
+            }
+        } else if (len < 0) {
+            std::cerr << "[ERROR] Receive error" << std::endl;
+            break;
+        }
+        // len == 0 はタイムアウト、ループ継続
     }
 }
 
 void MainController::shutdown() {
-    std::cout << "Shutting down gateway..." << std::endl;
+    std::cout << "[INFO] Shutting down gateway..." << std::endl;
 
     if (uart_) {
         uart_->stop();
     }
 
     if (cefore_) {
-        cefore_->stopReceiving();
-        cefore_->disconnect();
+        cefore_->close();
     }
 }
 
@@ -83,11 +96,11 @@ void MainController::onRxPacket(const RxPacket& packet) {
     PacketParser::SensorData data;
 
     if (!parser_->parse(packet.payload, data)) {
-        std::cerr << "Failed to parse packet from " << packet.sender_mac << std::endl;
+        std::cerr << "[ERROR] Failed to parse packet from " << packet.sender_mac << std::endl;
         return;
     }
 
-    std::cout << "Received " << data.signal_code << " from " << packet.sender_mac
+    std::cout << "[INFO] Received " << data.signal_code << " from " << packet.sender_mac
               << ": " << data.content_name << " = " << data.content << std::endl;
 
     // DATAパケットかチェック
@@ -98,18 +111,21 @@ void MainController::onRxPacket(const RxPacket& packet) {
         // コンテンツ名にタイムスタンプ付加
         std::string timestamped_uri = name_mapper_->addTimestamp(data.content_name);
 
-        // CEFOREに公開
-        std::vector<uint8_t> payload(data.content, data.content + strlen(data.content));
-        if (cefore_->publishData(timestamped_uri, payload)) {
-            std::cout << "Published to CEFORE: " << timestamped_uri << std::endl;
+        // CEFOREに公開（cefpyco方式: sendData）
+        int payload_len = strlen(data.content);
+        if (cefore_->sendData(timestamped_uri.c_str(),
+                             0,  // chunk_num
+                             (const uint8_t*)data.content,
+                             payload_len)) {
+            std::cout << "[INFO] Published to CEFORE: " << timestamped_uri << std::endl;
         } else {
-            std::cerr << "Failed to publish to CEFORE" << std::endl;
+            std::cerr << "[ERROR] Failed to publish to CEFORE" << std::endl;
         }
     }
 }
 
 void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
-    std::cout << "Received Interest: " << uri << " (chunk=" << chunk_num << ")" << std::endl;
+    std::cout << "[INFO] Received Interest: " << uri << " (chunk=" << chunk_num << ")" << std::endl;
 
     // タイムスタンプを除去してICSNコンテンツ名取得
     std::string content_name = name_mapper_->removeTimestamp(uri);
@@ -118,7 +134,7 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
     std::set<std::string> macs = fib_->lookup(content_name);
 
     if (macs.empty()) {
-        std::cout << "No FIB entry found for: " << content_name << std::endl;
+        std::cout << "[WARN] No FIB entry found for: " << content_name << std::endl;
         return;
     }
 
@@ -138,9 +154,9 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
     // 各MACアドレスにInterest転送
     for (const auto& mac : macs) {
         if (uart_->sendTxCommand(mac, binary_data)) {
-            std::cout << "Forwarded Interest to " << mac << ": " << content_name << std::endl;
+            std::cout << "[INFO] Forwarded Interest to " << mac << ": " << content_name << std::endl;
         } else {
-            std::cerr << "Failed to forward Interest to " << mac << std::endl;
+            std::cerr << "[ERROR] Failed to forward Interest to " << mac << std::endl;
         }
     }
 }

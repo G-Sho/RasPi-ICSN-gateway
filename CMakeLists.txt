@@ -55,9 +55,15 @@ set(SOURCES
 add_executable(gateway ${SOURCES})
 
 # リンクライブラリ
+# 静的ライブラリは依存ライブラリの前に配置
 target_link_libraries(gateway
+    -Wl,--start-group
     ${CEFORE_LIB}
-    Threads::Threads
+    ssl
+    crypto
+    pthread
+    dl
+    -Wl,--end-group
 )
 
 # インストールターゲット
