@@ -46,6 +46,25 @@ bool MainController::initialize(const std::string& uart_device, int baudrate) {
         onInterest(uri, chunk_num);
     });
 
+    // プレフィックス登録（全センサーデータのルート）
+    // ICSN側で使う名前空間を登録
+    std::cout << "[INFO] Registering CEFORE prefixes..." << std::endl;
+
+    // ICSNセンサーのルートプレフィックスを登録
+    // 実際のセンサー名に応じて変更
+    const char* prefixes[] = {
+        "ccnx:/icsn",
+        nullptr
+    };
+
+    for (int i = 0; prefixes[i] != nullptr; i++) {
+        if (cefore_->registerName(prefixes[i])) {
+            std::cout << "[INFO] Registered prefix: " << prefixes[i] << std::endl;
+        } else {
+            std::cerr << "[ERROR] Failed to register prefix: " << prefixes[i] << std::endl;
+        }
+    }
+
     // UART受信開始
     uart_->start();
 
@@ -112,6 +131,10 @@ void MainController::onRxPacket(const RxPacket& packet) {
         // コンテンツ名にタイムスタンプ付加
         std::string timestamped_uri = name_mapper_->addTimestamp(data.content_name);
 
+        // 初回受信時は名前登録（冪等性あり）
+        // 例: "/sensor/temp/12345" → "/sensor/temp" を登録
+        cefore_->registerName(data.content_name);
+
         // CEFOREに公開（cefpyco方式: sendData）
         int payload_len = strlen(data.content);
         if (cefore_->sendData(timestamped_uri.c_str(),
@@ -136,7 +159,9 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
 
     if (macs.empty()) {
         std::cout << "[WARN] No FIB entry found for: " << content_name << std::endl;
-        return;
+        std::cout << "[INFO] Broadcasting Interest to all nodes" << std::endl;
+        // FIBエントリがない場合はブロードキャスト
+        macs.insert("FF:FF:FF:FF:FF:FF");
     }
 
     // ICSN Interestパケット作成

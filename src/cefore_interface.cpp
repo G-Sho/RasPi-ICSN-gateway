@@ -173,7 +173,15 @@ bool CeforeInterface::callRegisterAPI(uint16_t func, const char* uri) {
     }
 
     // cefpyco.c:172 - cef_client_prefix_regを使用
+    // 注: この関数は戻り値がvoid（エラーチェック不可）
     cef_client_prefix_reg(handle_, func, name, (uint16_t)res);
+
+    // 登録が反映されるまで少し待つ
+    struct timespec ts = {0, 100L * 1000L * 1000L};  // 100ms
+    nanosleep(&ts, nullptr);
+
+    std::cout << "[DEBUG] Prefix registration sent to cefnetd" << std::endl;
+
     return true;
 }
 
