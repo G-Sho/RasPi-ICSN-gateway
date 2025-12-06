@@ -30,8 +30,9 @@ bool MainController::initialize(const std::string& uart_device, int baudrate) {
     fib_ = std::make_unique<GatewayFIB>();
 
     // CEFORE初期化（cefpyco方式: init()でconnectまで完了）
+    // cefpycoのテストと同様に、空文字列を渡す (test_cefpyco.c:38)
     std::cout << "[INFO] Initializing CEFORE..." << std::endl;
-    if (!cefore_->init()) {
+    if (!cefore_->init(0, "")) {
         std::cerr << "[ERROR] CEFORE initialization failed" << std::endl;
         return false;
     }

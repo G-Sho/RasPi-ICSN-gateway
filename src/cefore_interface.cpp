@@ -10,31 +10,32 @@ CeforeInterface::~CeforeInterface() {
     close();
 }
 
-// cefpyco: create_cef_handler (cefpyco.c:101-112)
+// CEFORE公式ツール方式の初期化 (cefore/tools/cefgetchunk/cefgetchunk.c:224-248)
 bool CeforeInterface::init(int port_num, const char* config_path) {
     std::cout << "[INFO] Initializing Cefore..." << std::endl;
 
-    // 1. cef_log_init (cefpyco.c:105)
-    cef_log_init("raspi_gateway", 1);
+    // 1. cef_log_init2 を使用（CEFOREの公式ツールと同じ）
+    cef_log_init2((char*)config_path, 1 /* for CEFNETD */);
 
-    // 2. cef_frame_init (cefpyco.c:106)
+    // 2. cef_frame_init
     cef_frame_init();
 
-    // 3. cef_client_init (cefpyco.c:107)
-    int res = cef_client_init(port_num, config_path);
+    // 3. cef_client_init
+    int res = cef_client_init(port_num, (char*)config_path);
     if (res < 0) {
         std::cerr << "[ERROR] cef_client_init failed: " << res << std::endl;
         std::cerr << "[INFO] Check:" << std::endl;
-        std::cerr << "  1. /usr/local/cefore/cefnetd.conf exists and is valid" << std::endl;
-        std::cerr << "  2. PORT_NUM is set in cefnetd.conf" << std::endl;
+        std::cerr << "  1. cefnetd is running (check with: cefstatus)" << std::endl;
+        std::cerr << "  2. /usr/local/cefore/cefnetd.conf exists and is valid" << std::endl;
+        std::cerr << "  3. PORT_NUM is set in cefnetd.conf (default: 9896)" << std::endl;
         return false;
     }
 
-    // 4. cef_client_connect (cefpyco.c:109)
+    // 4. cef_client_connect
     handle_ = cef_client_connect();
     if (handle_ < 1) {
         std::cerr << "[ERROR] cef_client_connect failed (handle=" << handle_ << ")" << std::endl;
-        std::cerr << "[INFO] Make sure cefnetd is running: sudo cefnetd" << std::endl;
+        std::cerr << "[INFO] Make sure cefnetd is running: sudo cefnetdstart" << std::endl;
         return false;
     }
 
