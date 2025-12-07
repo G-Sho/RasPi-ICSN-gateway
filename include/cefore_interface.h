@@ -50,7 +50,8 @@ public:
     void setInterestCallback(std::function<void(const std::string& uri, uint32_t chunk_num)> callback);
 
     // 受信データのパース処理
-    bool parseInterest(const uint8_t* buffer, int len, std::string& uri, uint32_t& chunk_num);
+    // 戻り値: 処理後の残りバッファサイズ（0=パース失敗またはバッファ終端）
+    int parseInterest(const uint8_t* buffer, int len, std::string& uri, uint32_t& chunk_num);
 
 private:
     // cefpyco: call_register_api相当

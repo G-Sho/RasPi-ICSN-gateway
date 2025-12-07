@@ -210,6 +210,7 @@ int CeforeInterface::receive(uint8_t* buffer, int buffer_size, int timeout_ms) {
     // タイムアウトまでポーリング（cef_client_readは最大1秒ブロック）
     while (elapsed_ms < timeout_ms) {
         res = cef_client_read(handle_, buffer, buffer_size);
+
         if (res > 0) {
             return res;  // データ受信成功
         }
@@ -227,13 +228,16 @@ void CeforeInterface::setInterestCallback(std::function<void(const std::string&,
 }
 
 // Interest受信データのパース
-bool CeforeInterface::parseInterest(const uint8_t* buffer, int len, std::string& uri, uint32_t& chunk_num) {
+int CeforeInterface::parseInterest(const uint8_t* buffer, int len, std::string& uri, uint32_t& chunk_num) {
     struct cef_app_request app_request;
     memset(&app_request, 0, sizeof(app_request));
 
-    int res = cef_client_request_get_with_info((unsigned char*)buffer, len, &app_request);
-    if (res <= 0 || app_request.version != CefC_App_Version) {
-        return false;
+    // cef_client_request_get_with_info は、処理後の残りバッファサイズを返す
+    int remaining = cef_client_request_get_with_info((unsigned char*)buffer, len, &app_request);
+
+    if (remaining <= 0 || app_request.version != CefC_App_Version) {
+        // パース失敗、またはバッファ終端
+        return 0;
     }
 
     // Name → URI変換
@@ -242,5 +246,6 @@ bool CeforeInterface::parseInterest(const uint8_t* buffer, int len, std::string&
     uri = std::string(uri_buf);
     chunk_num = app_request.chunk_num;
 
-    return true;
+    // 残りバッファサイズを返す
+    return remaining;
 }

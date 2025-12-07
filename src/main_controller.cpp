@@ -84,16 +84,31 @@ void MainController::run() {
         int len = cefore_->receive(buffer, BUFFER_SIZE, 1000);
 
         if (len > 0) {
-            // Interest受信
-            std::string uri;
-            uint32_t chunk_num;
+            // Interest受信 - バッファ内の全メッセージを処理
+            // 注: cef_client_request_get_with_info() は処理済みメッセージを削除し、
+            //     残りのメッセージをバッファの先頭に詰めるため、常にbufferを渡す
+            int remaining = len;
 
-            if (cefore_->parseInterest(buffer, len, uri, chunk_num)) {
-                // コールバック呼び出し
-                onInterest(uri, chunk_num);
+            while (remaining > 0) {
+                std::string uri;
+                uint32_t chunk_num;
+
+                // 常にbufferの先頭を渡す（関数内でバッファが書き換えられる）
+                int next_remaining = cefore_->parseInterest(buffer, remaining, uri, chunk_num);
+
+                if (next_remaining > 0) {
+                    // パース成功 - Interestを処理
+                    onInterest(uri, chunk_num);
+
+                    // 残りサイズを更新（バッファは既に関数内で詰められている）
+                    remaining = next_remaining;
+                } else {
+                    // パース失敗、またはバッファ終端
+                    break;
+                }
             }
         } else if (len < 0) {
-            std::cerr << "[ERROR] Receive error" << std::endl;
+            std::cerr << "[ERROR] Receive error: " << len << std::endl;
             break;
         }
         // len == 0 はタイムアウト、ループ継続
