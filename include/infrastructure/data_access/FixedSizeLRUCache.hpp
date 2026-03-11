@@ -2,6 +2,7 @@
 
 #include <string>
 #include <cstring>
+#include <cstdint>
 #include <iostream>
 
 template<typename ValueType, size_t MaxSize>
