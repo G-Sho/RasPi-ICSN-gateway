@@ -7,6 +7,8 @@ struct __attribute__((packed)) CommunicationData {
     uint8_t hopCount;
     char contentName[100];
     char content[20];
+    uint32_t counter;        // リプレイ攻撃対策用カウンタ
+    uint8_t hmac[32];        // HMAC-SHA256認証値
 };
 
 bool PacketParser::parse(const std::vector<uint8_t>& raw_data, SensorData& output) {
@@ -28,6 +30,8 @@ bool PacketParser::parse(const std::vector<uint8_t>& raw_data, SensorData& outpu
 
     strncpy(output.content, comm_data.content, 20);
     output.content[19] = '\0';
+
+    output.counter = comm_data.counter;
 
     return true;
 }
