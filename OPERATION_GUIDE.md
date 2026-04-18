@@ -27,18 +27,20 @@ Raspberry Pi - ICSN ゲートウェイの動作確認手順をまとめたドキ
 
 | 機材 | 用途 |
 |---|---|
-| Raspberry Pi 4 または 3B+ | ゲートウェイ本体 |
+| Raspberry Pi 5 | ゲートウェイ本体 |
 | ESP32 ブリッジノード | UART 経由で Raspberry Pi と通信 |
 | USB-UART 変換アダプタ（任意） | PC からの UART 確認用 |
+
+> **補足**: Raspberry Pi 5 では I/O が RP1 チップ経由になっており、GPIO の UART（UART0）は `/dev/ttyAMA0` → `/dev/serial0` としてアクセスします。Bluetooth は RP1 内部の別 UART で動作するため、`dtoverlay=disable-bt` を適用することで UART0 をアプリケーション専用にできます。
 
 ### ソフトウェア
 
 | ソフトウェア | バージョン | インストール先 |
 |---|---|---|
-| Raspberry Pi OS (64-bit 推奨) | Bullseye 以降 | Raspberry Pi |
+| Raspberry Pi OS (64-bit) | Bookworm（Debian 12）以降 | Raspberry Pi |
 | CEFORE | 最新版 | Raspberry Pi |
 | CMake | 3.10+ | Raspberry Pi |
-| GCC | 7.0+（C++17 対応） | Raspberry Pi |
+| GCC | 12.0+（C++17 対応） | Raspberry Pi |
 | cefnetd | CEFORE 付属 | Raspberry Pi |
 
 ---
@@ -71,10 +73,12 @@ sudo raspi-config
 #   「シリアルポートハードウェアを有効にしますか？」  -> Yes
 ```
 
-`/boot/config.txt` を編集して Bluetooth を無効化し、UART を専有させます。
+> **Raspberry Pi 5 の設定ファイルパスについて**: Raspberry Pi OS Bookworm では、ブート設定ファイルのパスが `/boot/config.txt` から `/boot/firmware/config.txt` に変更されています。
+
+`/boot/firmware/config.txt` を編集して Bluetooth を無効化し、UART0 をアプリケーション専用にします。
 
 ```bash
-sudo nano /boot/config.txt
+sudo nano /boot/firmware/config.txt
 ```
 
 以下を追加（または既存行を変更）：
@@ -94,7 +98,7 @@ sudo reboot
 
 ```bash
 ls -l /dev/serial0
-# 期待: /dev/serial0 -> ttyAMA0 (または ttyS0)
+# 期待: /dev/serial0 -> ttyAMA0
 ```
 
 ### 2.4 UART ポートのアクセス権設定
@@ -470,7 +474,7 @@ Error opening /dev/serial0: No such file or directory
 **対処：**
 
 1. `raspi-config` で Serial Port Hardware を有効化
-2. `/boot/config.txt` に `enable_uart=1` と `dtoverlay=disable-bt` を追加
+2. `/boot/firmware/config.txt` に `enable_uart=1` と `dtoverlay=disable-bt` を追加
 3. 再起動
 
 ---
@@ -520,7 +524,7 @@ Initialization failed
 
 ### 環境セットアップ
 
-- [ ] Raspberry Pi の UART が有効化されている（`/dev/serial0` が存在する）
+- [ ] Raspberry Pi 5 の UART が有効化されている（`/dev/serial0` が `ttyAMA0` を指している）
 - [ ] `dialout` グループに追加されている、または `sudo` で実行可能
 - [ ] CEFORE（libcefore）がインストールされている
 - [ ] cefnetd が正常に起動できる
