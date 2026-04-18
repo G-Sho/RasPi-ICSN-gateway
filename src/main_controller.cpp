@@ -145,6 +145,9 @@ void MainController::onRxPacket(const RxPacket& packet) {
         // FIBエントリ学習（content_name → MAC）
         fib_->save(data.content_name, {packet.sender_mac});
 
+        // PITエントリを削除（データが届いたので重複抑制を解除）
+        pit_.erase(data.content_name);
+
         // コンテンツ名にタイムスタンプ付加
         std::string timestamped_uri = name_mapper_->addTimestamp(data.content_name);
 
@@ -170,6 +173,18 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
 
     // タイムスタンプを除去してICSNコンテンツ名取得
     std::string content_name = name_mapper_->removeTimestamp(uri);
+
+    // PIT重複チェック: 同一コンテンツ名のInterestが既に転送済みであれば抑制
+    auto now = std::chrono::steady_clock::now();
+    auto it = pit_.find(content_name);
+    if (it != pit_.end()) {
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second).count();
+        if (elapsed_ms < PIT_TIMEOUT_MS) {
+            std::cout << "[INFO] Suppressing duplicate Interest for: " << content_name
+                      << " (pending since " << elapsed_ms << "ms ago)" << std::endl;
+            return;
+        }
+    }
 
     // FIB検索（最長プレフィックス一致）
     std::set<std::string> macs = fib_->lookup(content_name);
@@ -202,4 +217,7 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
             std::cerr << "[ERROR] Failed to forward Interest to " << mac << std::endl;
         }
     }
+
+    // PITに登録（重複抑制用）
+    pit_[content_name] = now;
 }
