@@ -184,6 +184,8 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
                       << " (pending since " << elapsed_ms << "ms ago)" << std::endl;
             return;
         }
+        // タイムアウト済みのエントリを削除
+        pit_.erase(it);
     }
 
     // FIB検索（最長プレフィックス一致）
@@ -209,15 +211,19 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
     std::vector<uint8_t> binary_data(sizeof(CommunicationData));
     memcpy(binary_data.data(), &interest_packet, sizeof(CommunicationData));
 
-    // 各MACアドレスにInterest転送
+    // 各MACアドレスにInterest転送（少なくとも1つ成功した場合にPIT登録）
+    bool forwarded = false;
     for (const auto& mac : macs) {
         if (uart_->sendTxCommand(mac, binary_data)) {
             std::cout << "[INFO] Forwarded Interest to " << mac << ": " << content_name << std::endl;
+            forwarded = true;
         } else {
             std::cerr << "[ERROR] Failed to forward Interest to " << mac << std::endl;
         }
     }
 
-    // PITに登録（重複抑制用）
-    pit_[content_name] = now;
+    // 転送成功時のみPITに登録（重複抑制用）
+    if (forwarded) {
+        pit_[content_name] = now;
+    }
 }
