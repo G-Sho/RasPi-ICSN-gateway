@@ -11,6 +11,8 @@ struct __attribute__((packed)) CommunicationData {
     uint8_t hopCount;
     char contentName[100];
     char content[20];
+    uint32_t counter;        // リプレイ攻撃対策用カウンタ
+    uint8_t hmac[32];        // HMAC-SHA256認証値
 };
 
 MainController::MainController() {}

@@ -100,6 +100,7 @@ public:
         uint8_t hop_count;         // ホップカウント
         char content_name[100];    // コンテンツ名
         char content[20];          // コンテンツ本体
+        uint32_t counter;          // リプレイ攻撃対策用カウンタ
     };
 
     bool parse(const std::vector<uint8_t>& raw_data, SensorData& output);
@@ -357,6 +358,19 @@ OK\n
 ERR:INVALID_MAC\n
 ERR:DECODE_FAIL\n
 ERR:SEND_FAIL\n
+```
+
+**ICSNパケット構造体 (Base64ペイロードの中身):**
+```cpp
+struct __attribute__((packed)) CommunicationData {
+    char signalCode[10];     // "DATA" または "INTEREST"
+    uint8_t hopCount;        // ホップカウント
+    char contentName[100];   // コンテンツ名
+    char content[20];        // コンテンツ本体
+    uint32_t counter;        // リプレイ攻撃対策用カウンタ（ブロードキャストは0）
+    uint8_t hmac[32];        // HMAC-SHA256認証値（ブロードキャストはゼロ）
+};
+// 合計: 167バイト
 ```
 
 ### 5.2 CEFORE API使用方法
