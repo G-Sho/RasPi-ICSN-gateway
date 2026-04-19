@@ -4,7 +4,6 @@ import subprocess
 import json
 import time
 import re
-from pathlib import Path
 
 class CEFOReMeasurement:
     def __init__(self, gateway_host="localhost"):
@@ -48,49 +47,19 @@ class CEFOReMeasurement:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    def collect_sensor_data(self, node_type):
-        """Sensor（またはBridge）からメモリバッファを取得"""
-
-        try:
-            # シリアルコマンド実行（複数のポートを試す）
-            ports = ["/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyACM0"]
-
-            for port in ports:
-                try:
-                    result = subprocess.run(
-                        f"echo 'dump_perf' | timeout 2 picocom -b 115200 {port}",
-                        shell=True,
-                        capture_output=True,
-                        text=True,
-                        timeout=3
-                    )
-
-                    # JSON抽出
-                    json_match = re.search(r'\{.*\}', result.stdout, re.DOTALL)
-                    if json_match:
-                        return json.loads(json_match.group(0))
-
-                except Exception:
-                    continue
-
-            return {"status": "no_response"}
-
-        except Exception as e:
-            return {"status": "error", "message": str(e)}
-
     def measure_pattern(self, content_path, hop_label, num_iterations=50):
         """パターン1回分を測定"""
 
         print(f"\n[MEASURE] {hop_label}: {num_iterations} iterations")
 
-        # ノードのメモリバッファをリセット
+        # ノードのメモリバッファをリセット（手動）
         print("  → Resetting sensor buffers...")
-        subprocess.run(
-            "echo 'reset_perf' | picocom -b 115200 /dev/ttyUSB0",
-            shell=True,
-            capture_output=True
-        )
-        time.sleep(1)
+        print("    [MANUAL] On each ESP32 node, send: reset_perf")
+        print("    - Bridge:   echo 'reset_perf' | sudo tee /dev/ttyAMA0")
+        print("    - Sensor A: echo 'reset_perf' | tee /dev/ttyUSB0")
+        print("    - Sensor B: echo 'reset_perf' | tee /dev/ttyUSB1")
+        print("    - Sensor C: echo 'reset_perf' | tee /dev/ttyUSB2")
+        input("  → Press ENTER when all buffers are reset...")
 
         cefore_times = []
 
@@ -115,24 +84,19 @@ class CEFOReMeasurement:
 
         print()
 
-        # 測定完了後、各ノードのデータを収集
-        print("  → Collecting sensor measurements...")
-        bridge_data = self.collect_sensor_data("bridge")
-        sensor_a_data = self.collect_sensor_data("sensor_a")
-        sensor_b_data = self.collect_sensor_data("sensor_b")
-        sensor_c_data = self.collect_sensor_data("sensor_c")
+        print("\n  === Measurement Complete ===")
+        print("  [MANUAL] Collect sensor data from nodes:")
+        print("    1. Bridge:   echo 'dump_perf' > /dev/ttyAMA0  (then: cat /dev/ttyAMA0 | tee bridge_measurements.json)")
+        print("    2. Sensor A: echo 'dump_perf' > /dev/ttyUSB0  (then: cat /dev/ttyUSB0 | tee sensor_a_measurements.json)")
+        print("    3. Sensor B: echo 'dump_perf' > /dev/ttyUSB1  (then: cat /dev/ttyUSB1 | tee sensor_b_measurements.json)")
+        print("    4. Sensor C: echo 'dump_perf' > /dev/ttyUSB2  (then: cat /dev/ttyUSB2 | tee sensor_c_measurements.json)")
+        print("  Save outputs to respective JSON files for analysis.")
 
         # 結果をまとめる
         result = {
             "hop_label": hop_label,
             "num_iterations": num_iterations,
-            "cefore_times_us": cefore_times,
-            "bridge_data": bridge_data,
-            "sensor_data": {
-                "A": sensor_a_data,
-                "B": sensor_b_data,
-                "C": sensor_c_data
-            }
+            "cefore_times_us": cefore_times
         }
 
         self.results[hop_label] = result
@@ -162,14 +126,6 @@ class CEFOReMeasurement:
         print(f"    Min:    {min(times):8}")
         print(f"    Max:    {max(times):8}")
         print(f"    P95:    {times[int(n*0.95)]:8}")
-
-        # Bridge/Sensor処理時間も表示
-        if result["bridge_data"].get("bridge"):
-            bridge_ota = [m["ota_us"] for m in result["bridge_data"]["bridge"]]
-            print(f"\n  Bridge OTA (µs):")
-            print(f"    Mean: {sum(bridge_ota) / len(bridge_ota):8.1f}")
-            print(f"    Min:  {min(bridge_ota):8}")
-            print(f"    Max:  {max(bridge_ota):8}")
 
     def export_results(self, filename="measurements.json"):
         """結果をJSONファイルに保存"""
