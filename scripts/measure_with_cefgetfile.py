@@ -35,17 +35,18 @@ class CEFOReMeasurement:
             "3hop": []
         }
         self.serial_ports = {
-            "bridge":   "/dev/ttyAMA0",
+            "bridge":   "/dev/ttyUSB3",
             "sensor_a": "/dev/ttyUSB0",
             "sensor_b": "/dev/ttyUSB1",
             "sensor_c": "/dev/ttyUSB2"
         }
+        self._cs_mode_warned = False
 
     def run_cefgetfile(self, content_path, hop_label):
         """1回のcefgetfileを実行"""
 
         uri = f"ccnx:{content_path}"
-        cmd = ["cefgetfile", uri]
+        cmd = ["cefgetfile", uri, "-f", "_DUMMY"]
 
         try:
             result = subprocess.run(
@@ -56,7 +57,8 @@ class CEFOReMeasurement:
             )
 
             # CEFOREの出力からDurationを抽出
-            match = re.search(r'Duration\s*=\s*([\d.]+)\s*sec', result.stdout)
+            combined = result.stdout + result.stderr
+            match = re.search(r'Duration\s*=\s*([\d.]+)\s*sec', combined)
             if match:
                 duration_sec = float(match.group(1))
                 duration_us = int(duration_sec * 1_000_000)
@@ -67,12 +69,24 @@ class CEFOReMeasurement:
                     "stdout": result.stdout
                 }
             else:
-                return {"status": "parse_error", "stdout": result.stdout}
+                return {"status": "parse_error", "stdout": result.stdout, "stderr": result.stderr}
 
         except subprocess.TimeoutExpired:
             return {"status": "timeout"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
+
+    def _serial_read_response(self, ser, timeout_sec=3.0):
+        """シリアルポートから改行区切りの応答を読み取る"""
+        deadline = time.time() + timeout_sec
+        response = b""
+        while time.time() < deadline:
+            chunk = ser.read(ser.in_waiting or 1)
+            if chunk:
+                response += chunk
+                if b"\n" in response:
+                    break
+        return response.decode("utf-8", errors="replace")
 
     def _serial_write(self, port, command: bytes):
         """115200bps で1コマンドを送信する"""
@@ -102,18 +116,29 @@ class CEFOReMeasurement:
                 print(f"    [WARN] readsensor to {node_name} ({port}) failed: {e}")
 
     def flush_cefore_cache(self, content_path):
-        """cefnetd の CS から対象コンテンツのキャッシュを削除する"""
-        uri = f"ccnx:{content_path}"
+        """cefnetd の CS_MODE を確認し、キャッシュが有効な場合は一度だけ警告する。
+
+        Cefore v0.11.0 の cefctrl には cs del サブコマンドが存在しないため、
+        CS 削除は行わず、CS_MODE=0（デフォルト）以外の場合に警告を出す。
+        """
+        if self._cs_mode_warned:
+            return
         try:
-            subprocess.run(
-                ["cefctrl", "cs", "del", uri],
-                capture_output=True,
-                timeout=5
-            )
+            conf_path = "/usr/local/cefore/cefnetd.conf"
+            with open(conf_path, "r") as f:
+                conf = f.read()
+            match = re.search(r'^\s*CS_MODE\s*=\s*(\d+)', conf, re.MULTILINE)
+            cs_mode = int(match.group(1)) if match else 0
+            if cs_mode != 0:
+                print(f"    [WARN] CS_MODE={cs_mode} in cefnetd.conf: "
+                      "Content Store is active but cache flushing is not supported "
+                      "in Cefore v0.11.0 (cefctrl cs del is unavailable). "
+                      "Measurement results may include cached responses.")
+                self._cs_mode_warned = True
         except FileNotFoundError:
-            pass  # cefctrl が無い環境ではスキップ
+            pass  # 設定ファイルが無い環境ではスキップ
         except Exception as e:
-            print(f"    [WARN] flush_cefore_cache failed: {e}")
+            print(f"    [WARN] flush_cefore_cache: could not read CS_MODE: {e}")
 
     def flush_node_caches(self, node_names):
         """中間 ESP32 ノードのコンテンツキャッシュをクリアする
@@ -140,24 +165,14 @@ class CEFOReMeasurement:
             port = self.serial_ports[node_name]
             print(f"    [{node_name}]", end=" ", flush=True)
             try:
-                echo_proc = subprocess.Popen(
-                    ["echo", "clear_cache"],
-                    stdout=subprocess.PIPE
-                )
-                picocom_proc = subprocess.Popen(
-                    ["timeout", "2", "picocom", "-b", "115200", port],
-                    stdin=echo_proc.stdout,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
-                echo_proc.stdout.close()
-                stdout, _ = picocom_proc.communicate()
-                result_stdout = stdout.decode("utf-8", errors="replace")
-
-                if "cleared" in result_stdout.lower() or "ok" in result_stdout.lower():
+                with serial.Serial(port, baudrate=115200, timeout=3) as ser:
+                    ser.reset_input_buffer()
+                    ser.write(b"clear_cache\n")
+                    response_str = self._serial_read_response(ser, timeout_sec=2.0)
+                if "ok" in response_str.lower() or "cleared" in response_str.lower():
                     print("✓")
                 else:
-                    print("⚠ (unclear response)")
+                    print(f"⚠ ({response_str[:50].strip()})")
             except Exception as e:
                 print(f"✗ ({e})")
             time.sleep(0.3)
@@ -171,28 +186,21 @@ class CEFOReMeasurement:
         port = self.serial_ports[node_name]
 
         try:
-            echo_proc = subprocess.Popen(
-                ["echo", "dump_perf"],
-                stdout=subprocess.PIPE
-            )
-            picocom_proc = subprocess.Popen(
-                ["timeout", "2", "picocom", "-b", "115200", port],
-                stdin=echo_proc.stdout,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            echo_proc.stdout.close()
-            stdout, _ = picocom_proc.communicate(timeout=3)
-            result_stdout = stdout.decode("utf-8", errors="replace")
+            with serial.Serial(port, baudrate=115200, timeout=3) as ser:
+                ser.reset_input_buffer()
+                ser.write(b"dump_perf\n")
+                response_str = self._serial_read_response(ser, timeout_sec=3.0)
 
-            json_match = re.search(r'\{.*\}', result_stdout, re.DOTALL)
+            json_match = re.search(r'\{.*\}', response_str, re.DOTALL)
             if json_match:
                 return json.loads(json_match.group(0))
             else:
-                return {"status": "parse_error"}
+                return {"status": "parse_error", "raw": response_str[:200]}
 
-        except subprocess.TimeoutExpired:
-            return {"status": "timeout"}
+        except serial.SerialException as e:
+            return {"status": "error", "message": str(e)}
+        except json.JSONDecodeError as e:
+            return {"status": "json_error", "message": str(e)}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
