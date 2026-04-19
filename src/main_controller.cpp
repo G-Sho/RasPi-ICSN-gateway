@@ -201,6 +201,8 @@ void MainController::onRxPacket(const RxPacket& packet) {
         int payload_len = strlen(data.content);
         if (pending_chunks.empty()) {
             // PITエントリが存在しない場合はチャンク番号0でフォールバック
+            std::cerr << "[WARN] DATA received without matching PIT entry for: "
+                      << data.content_name << " — falling back to chunk 0" << std::endl;
             pending_chunks.insert(0);
         }
         for (uint32_t chunk : pending_chunks) {
@@ -231,6 +233,13 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
         auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second.time).count();
         if (elapsed_ms < PIT_TIMEOUT_MS) {
             // 同一コンテンツ名への待機中Interestにチャンク番号を追加
+            // チャンク数が多すぎる場合はログ警告（チャンク番号は追加しない）
+            static constexpr size_t MAX_PENDING_CHUNKS = 256;
+            if (it->second.pending_chunks.size() >= MAX_PENDING_CHUNKS) {
+                std::cerr << "[WARN] Too many pending chunks for: " << content_name
+                          << " — discarding chunk " << chunk_num << std::endl;
+                return;
+            }
             it->second.pending_chunks.insert(chunk_num);
             std::cout << "[INFO] Aggregating chunk " << chunk_num << " into pending Interest for: "
                       << content_name << " (" << it->second.pending_chunks.size()
