@@ -189,16 +189,17 @@ ls -lh gateway
 ```bash
 sudo ./gateway
 # UART: /dev/serial0、ボーレート: 115200
+# FIB設定ファイルは ../config/test_fib.conf → config/test_fib.conf の順に自動探索
 ```
 
 ### カスタム設定で起動
 
 ```bash
-# 引数: <UARTデバイス> <ボーレート>
-sudo ./gateway /dev/serial0 115200
+# 引数: <UARTデバイス> <ボーレート> [<FIB設定ファイル>]
+sudo ./gateway /dev/serial0 115200 ../config/test_fib.conf
 
 # USB-UART アダプタを使用する場合
-sudo ./gateway /dev/ttyUSB0 115200
+sudo ./gateway /dev/ttyUSB0 115200 ../config/test_fib.conf
 ```
 
 ### 正常起動時の出力例
@@ -207,10 +208,14 @@ sudo ./gateway /dev/ttyUSB0 115200
 === Raspberry Pi CEFORE Gateway ===
 UART Device: /dev/serial0
 Baudrate: 115200
+FIB Config: ../config/test_fib.conf
 ===================================
 [INFO] Creating components...
 [INFO] Initializing CEFORE...
-[INFO] Registered prefix: ccnx:/icsn
+[INFO] Loading initial FIB from: ../config/test_fib.conf
+[INFO] Static FIB: /iot/buildingA/room101 -> CC:7B:5C:9A:F3:C4
+[INFO] Loaded 1 static FIB entries
+[INFO] Registered prefix: ccnx:/iot/buildingA/room101
 [INFO] Gateway initialized successfully
 [INFO] Gateway running... Press Ctrl+C to stop
 ```
@@ -235,7 +240,7 @@ sudo apt-get install -y socat
 socat PTY,link=/tmp/virtual-esp32,rawer PTY,link=/tmp/virtual-raspi,rawer &
 
 # ゲートウェイをカスタムデバイスで起動（別ターミナル）
-sudo ./gateway /tmp/virtual-raspi 115200
+sudo ./gateway /tmp/virtual-raspi 115200 ../config/test_fib.conf
 
 # テストパケット送信（Python で ICSN の CommunicationData 構造体を生成）
 python3 /tmp/send_test_packet.py /tmp/virtual-esp32
@@ -460,7 +465,7 @@ sudo usermod -a -G dialout $USER
 または sudo で実行：
 
 ```bash
-sudo ./gateway /dev/serial0 115200
+sudo ./gateway /dev/serial0 115200 ../config/test_fib.conf
 ```
 
 ---

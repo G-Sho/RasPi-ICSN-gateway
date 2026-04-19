@@ -1,5 +1,6 @@
 #include <iostream>
 #include <csignal>
+#include <fstream>
 #include <memory>
 #include "main_controller.h"
 
@@ -31,6 +32,22 @@ int main(int argc, char* argv[]) {
 
     if (argc >= 4) {
         fib_config_path = argv[3];
+    } else {
+        // 第4引数が省略された場合はデフォルト候補を順に探す
+        // build/ ディレクトリから実行する場合: ../config/test_fib.conf
+        // リポジトリルートから実行する場合:    config/test_fib.conf
+        const char* default_paths[] = {
+            "../config/test_fib.conf",
+            "config/test_fib.conf",
+            nullptr
+        };
+        for (int i = 0; default_paths[i] != nullptr; i++) {
+            std::ifstream f(default_paths[i]);
+            if (f.good()) {
+                fib_config_path = default_paths[i];
+                break;
+            }
+        }
     }
 
     std::cout << "=== Raspberry Pi CEFORE Gateway ===" << std::endl;
@@ -38,6 +55,8 @@ int main(int argc, char* argv[]) {
     std::cout << "Baudrate: " << baudrate << std::endl;
     if (!fib_config_path.empty()) {
         std::cout << "FIB Config: " << fib_config_path << std::endl;
+    } else {
+        std::cout << "[WARN] No FIB config file found. Static routes will not be loaded." << std::endl;
     }
     std::cout << "===================================" << std::endl;
 
