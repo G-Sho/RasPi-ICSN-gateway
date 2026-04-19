@@ -4,6 +4,7 @@
 #include <fstream>
 #include <sstream>
 #include <cstring>
+#include <ctime>
 #include <signal.h>
 #include <unistd.h>
 
@@ -77,6 +78,18 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
     // UART受信開始
     uart_->start();
 
+    // CSVファイルを開く（既存ファイルがあればヘッダーをスキップ）
+    {
+        std::ifstream check(CSV_FILE_PATH);
+        bool needs_header = !check.is_open() || check.peek() == std::ifstream::traits_type::eof();
+        check.close();
+        csv_file_.open(CSV_FILE_PATH, std::ios::out | std::ios::app);
+        if (csv_file_.is_open() && needs_header) {
+            csv_file_ << "timestamp,content_name,interest_chunk_num,data_chunk_num,latency_ms\n";
+            csv_file_.flush();
+        }
+    }
+
     // std::cout << "[INFO] Gateway initialized successfully" << std::endl;
     return true;
 }
@@ -133,6 +146,10 @@ void MainController::shutdown() {
 
     if (cefore_) {
         cefore_->close();
+    }
+
+    if (csv_file_.is_open()) {
+        csv_file_.close();
     }
 }
 
@@ -260,6 +277,19 @@ void MainController::onRxPacket(const RxPacket& packet) {
                               payload_len)) {
             // std::cout << "[INFO] Published to CEFORE: " << cefore_uri
             //           << " (chunk=" << chunk_to_serve << ")" << std::endl;
+
+            // 計測: ICSN経由でCeforeへpublishできたレイテンシを記録
+            auto meas_it = measurement_pending_.find(data.content_name);
+            if (meas_it != measurement_pending_.end()) {
+                auto data_time = std::chrono::steady_clock::now();
+                auto latency_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    data_time - meas_it->second.interest_time).count();
+                writeCsvEntry(data.content_name,
+                              meas_it->second.interest_chunk_num,
+                              chunk_to_serve,
+                              latency_ms);
+                measurement_pending_.erase(meas_it);
+            }
         } else {
             // std::cerr << "[ERROR] Failed to publish to CEFORE (chunk=" << chunk_to_serve << ")" << std::endl;
         }
@@ -267,8 +297,12 @@ void MainController::onRxPacket(const RxPacket& packet) {
         // PITキューに残りチャンクがある場合は次のICSN Interestを転送する
         // （キューが空になるまで1応答ごとに1クエリを順次送信）
         if (has_pit_entry && !pit_it->second.pending_chunks.empty()) {
+            uint32_t next_chunk = pit_it->second.pending_chunks.front();
             if (forwardToICSN(data.content_name)) {
-                pit_it->second.time = std::chrono::steady_clock::now();
+                auto forward_time = std::chrono::steady_clock::now();
+                pit_it->second.time = forward_time;
+                // 計測: 次のチャンクのICSN転送時刻を記録
+                measurement_pending_[data.content_name] = MeasurementEntry{forward_time, next_chunk};
             }
         } else if (has_pit_entry) {
             pit_.erase(pit_it);
@@ -330,5 +364,29 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
         auto& entry = pit_[content_name];
         entry.time = now;
         entry.pending_chunks.push(chunk_num);
+        // 計測: CSキャッシュを通さずにICSNへ転送した場合のみInterest受信時刻を記録
+        measurement_pending_[content_name] = MeasurementEntry{now, chunk_num};
     }
+}
+
+void MainController::writeCsvEntry(const std::string& content_name,
+                                   uint32_t interest_chunk_num,
+                                   uint32_t data_chunk_num,
+                                   long long latency_ms) {
+    if (!csv_file_.is_open()) return;
+
+    // ISO 8601形式のタイムスタンプ（秒精度）
+    auto now_sys = std::chrono::system_clock::now();
+    std::time_t t = std::chrono::system_clock::to_time_t(now_sys);
+    std::tm tm_buf;
+    localtime_r(&t, &tm_buf);
+    char ts_buf[32];
+    std::strftime(ts_buf, sizeof(ts_buf), "%Y-%m-%dT%H:%M:%S", &tm_buf);
+
+    csv_file_ << ts_buf << ","
+              << content_name << ","
+              << interest_chunk_num << ","
+              << data_chunk_num << ","
+              << latency_ms << "\n";
+    csv_file_.flush();
 }

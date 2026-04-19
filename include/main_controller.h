@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <fstream>
 #include <queue>
 #include <set>
 #include <string>
@@ -31,6 +32,12 @@ private:
     // FIB検索してUART経由で送信する。転送成功時にtrueを返す
     bool forwardToICSN(const std::string& content_name);
 
+    // レイテンシ計測結果をCSVファイルへ書き出す
+    void writeCsvEntry(const std::string& content_name,
+                       uint32_t interest_chunk_num,
+                       uint32_t data_chunk_num,
+                       long long latency_ms);
+
     std::unique_ptr<UARTReceiver> uart_;
     std::unique_ptr<PacketParser> parser_;
     std::unique_ptr<CeforeInterface> cefore_;
@@ -54,4 +61,16 @@ private:
     };
     std::unordered_map<std::string, CsEntry> cs_;
     static constexpr int CS_TTL_MS = 2000;  // CSキャッシュ有効期間(ms)
+
+    // レイテンシ計測: ICSN転送時のInterest受信時刻とチャンク番号を記録する
+    // CSキャッシュヒット時は記録しない
+    struct MeasurementEntry {
+        std::chrono::steady_clock::time_point interest_time;
+        uint32_t interest_chunk_num;
+    };
+    std::unordered_map<std::string, MeasurementEntry> measurement_pending_;
+
+    // CSVファイル出力
+    std::ofstream csv_file_;
+    static constexpr const char* CSV_FILE_PATH = "latency_measurements.csv";
 };
