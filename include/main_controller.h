@@ -29,7 +29,6 @@ private:
     std::unique_ptr<UARTReceiver> uart_;
     std::unique_ptr<PacketParser> parser_;
     std::unique_ptr<CeforeInterface> cefore_;
-    std::unique_ptr<NameMapper> name_mapper_;
     std::unique_ptr<GatewayFIB> fib_;
 
     // PIT: コンテンツ名ごとに最後にInterestを転送した時刻と

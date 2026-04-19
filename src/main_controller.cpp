@@ -31,7 +31,6 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
     uart_ = std::make_unique<UARTReceiver>(uart_device, baudrate);
     parser_ = std::make_unique<PacketParser>();
     cefore_ = std::make_unique<CeforeInterface>();
-    name_mapper_ = std::make_unique<NameMapper>();
     fib_ = std::make_unique<GatewayFIB>();
 
     // 設定ファイルから初期 FIB エントリを読み込む（静的ルート）
@@ -191,11 +190,11 @@ void MainController::onRxPacket(const RxPacket& packet) {
             pit_.erase(pit_it);
         }
 
-        // コンテンツ名にタイムスタンプ付加
-        std::string timestamped_uri = name_mapper_->addTimestamp(data.content_name);
+        // コンテンツ名にccnx:/スキームを付加
+        std::string cefore_uri = NameMapper::addScheme(data.content_name);
 
         // 初回受信時は名前登録（冪等性あり）
-        cefore_->registerName(NameMapper::addScheme(data.content_name).c_str());
+        cefore_->registerName(cefore_uri.c_str());
 
         // 待機中の全チャンク番号に対してCEFOREへ公開
         int payload_len = strlen(data.content);
@@ -206,11 +205,11 @@ void MainController::onRxPacket(const RxPacket& packet) {
             pending_chunks.insert(0);
         }
         for (uint32_t chunk : pending_chunks) {
-            if (cefore_->sendData(timestamped_uri.c_str(),
+            if (cefore_->sendData(cefore_uri.c_str(),
                                   chunk,
                                   (const uint8_t*)data.content,
                                   payload_len)) {
-                std::cout << "[INFO] Published to CEFORE: " << timestamped_uri
+                std::cout << "[INFO] Published to CEFORE: " << cefore_uri
                           << " (chunk=" << chunk << ")" << std::endl;
             } else {
                 std::cerr << "[ERROR] Failed to publish to CEFORE (chunk=" << chunk << ")" << std::endl;
@@ -222,8 +221,8 @@ void MainController::onRxPacket(const RxPacket& packet) {
 void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
     std::cout << "[INFO] Received Interest: " << uri << " (chunk=" << chunk_num << ")" << std::endl;
 
-    // タイムスタンプを除去してICSNコンテンツ名取得
-    std::string content_name = name_mapper_->removeTimestamp(uri);
+    // スキームを除去してICSNコンテンツ名取得
+    std::string content_name = NameMapper::removeScheme(uri);
 
     // PIT重複チェック: 同一コンテンツ名のInterestが既に転送済みであれば
     // チャンク番号を集約して抑制
