@@ -13,6 +13,12 @@ class CEFOReMeasurement:
             "2hop": [],
             "3hop": []
         }
+        self.serial_ports = {
+            "bridge":   "/dev/ttyAMA0",
+            "sensor_a": "/dev/ttyUSB0",
+            "sensor_b": "/dev/ttyUSB1",
+            "sensor_c": "/dev/ttyUSB2"
+        }
 
     def run_cefgetfile(self, content_path, hop_label):
         """1回のcefgetfileを実行"""
@@ -47,19 +53,62 @@ class CEFOReMeasurement:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
+    def reset_all_buffers(self):
+        """全ノードのバッファをリセット"""
+        print("  → Resetting all sensor buffers...")
+        for node_name, port in self.serial_ports.items():
+            try:
+                subprocess.run(
+                    ["sudo", "tee", port],
+                    input=b"reset_perf\n",
+                    capture_output=True,
+                    timeout=3
+                )
+                time.sleep(0.3)
+            except Exception as e:
+                print(f"    [WARN] Failed to reset {node_name}: {e}")
+
+    def collect_sensor_data(self, node_name):
+        """指定ノードからメモリバッファを取得"""
+
+        if node_name not in self.serial_ports:
+            return {"status": "unknown_node"}
+
+        port = self.serial_ports[node_name]
+
+        try:
+            echo_proc = subprocess.Popen(
+                ["echo", "dump_perf"],
+                stdout=subprocess.PIPE
+            )
+            picocom_proc = subprocess.Popen(
+                ["timeout", "2", "picocom", "-b", "115200", port],
+                stdin=echo_proc.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            echo_proc.stdout.close()
+            stdout, _ = picocom_proc.communicate(timeout=3)
+            result_stdout = stdout.decode("utf-8", errors="replace")
+
+            json_match = re.search(r'\{.*\}', result_stdout, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(0))
+            else:
+                return {"status": "parse_error"}
+
+        except subprocess.TimeoutExpired:
+            return {"status": "timeout"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
     def measure_pattern(self, content_path, hop_label, num_iterations=50):
         """パターン1回分を測定"""
 
         print(f"\n[MEASURE] {hop_label}: {num_iterations} iterations")
 
-        # ノードのメモリバッファをリセット（手動）
-        print("  → Resetting sensor buffers...")
-        print("    [MANUAL] On each ESP32 node, send: reset_perf")
-        print("    - Bridge:   echo 'reset_perf' | sudo tee /dev/ttyAMA0")
-        print("    - Sensor A: echo 'reset_perf' | tee /dev/ttyUSB0")
-        print("    - Sensor B: echo 'reset_perf' | tee /dev/ttyUSB1")
-        print("    - Sensor C: echo 'reset_perf' | tee /dev/ttyUSB2")
-        input("  → Press ENTER when all buffers are reset...")
+        # 全ノードのメモリバッファをリセット
+        self.reset_all_buffers()
 
         cefore_times = []
 
@@ -84,19 +133,25 @@ class CEFOReMeasurement:
 
         print()
 
-        print("\n  === Measurement Complete ===")
-        print("  [MANUAL] Collect sensor data from nodes:")
-        print("    1. Bridge:   echo 'dump_perf' > /dev/ttyAMA0  (then: cat /dev/ttyAMA0 | tee bridge_measurements.json)")
-        print("    2. Sensor A: echo 'dump_perf' > /dev/ttyUSB0  (then: cat /dev/ttyUSB0 | tee sensor_a_measurements.json)")
-        print("    3. Sensor B: echo 'dump_perf' > /dev/ttyUSB1  (then: cat /dev/ttyUSB1 | tee sensor_b_measurements.json)")
-        print("    4. Sensor C: echo 'dump_perf' > /dev/ttyUSB2  (then: cat /dev/ttyUSB2 | tee sensor_c_measurements.json)")
-        print("  Save outputs to respective JSON files for analysis.")
+        # 全ノードからセンサー計測データを自動収集
+        print("  → Collecting sensor measurements...")
+        sensor_measurements = {}
+        for node_name in self.serial_ports:
+            print(f"    [{node_name}]", end=" ", flush=True)
+            data = self.collect_sensor_data(node_name)
+            sensor_measurements[node_name] = data
+            status = data.get("status", "ok")
+            if status != "ok":
+                print(f"⚠ {status}")
+            else:
+                print("✓")
 
         # 結果をまとめる
         result = {
             "hop_label": hop_label,
             "num_iterations": num_iterations,
-            "cefore_times_us": cefore_times
+            "cefore_times_us": cefore_times,
+            "sensor_measurements": sensor_measurements
         }
 
         self.results[hop_label] = result
@@ -126,6 +181,32 @@ class CEFOReMeasurement:
         print(f"    Min:    {min(times):8}")
         print(f"    Max:    {max(times):8}")
         print(f"    P95:    {times[int(n*0.95)]:8}")
+
+        sensor_measurements = result.get("sensor_measurements", {})
+        if sensor_measurements:
+            print(f"\n  OTA Statistics per Node:")
+            for node_name, data in sensor_measurements.items():
+                status = data.get("status")
+                if status and status != "ok":
+                    print(f"    [{node_name}] status={status}")
+                    continue
+                ota_us = data.get("ota_us")
+                roundtrip_us = data.get("roundtrip_us")
+                fib_us = data.get("fib_us")
+                total_us = data.get("total_us")
+                parts = []
+                if ota_us is not None:
+                    parts.append(f"ota={ota_us} µs")
+                if roundtrip_us is not None:
+                    parts.append(f"roundtrip={roundtrip_us} µs")
+                if fib_us is not None:
+                    parts.append(f"fib={fib_us} µs")
+                if total_us is not None:
+                    parts.append(f"total={total_us} µs")
+                if parts:
+                    print(f"    [{node_name}] " + ", ".join(parts))
+                else:
+                    print(f"    [{node_name}] (no timing fields)")
 
     def export_results(self, filename="measurements.json"):
         """結果をJSONファイルに保存"""
