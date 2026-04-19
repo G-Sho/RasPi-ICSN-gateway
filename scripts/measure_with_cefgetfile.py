@@ -14,6 +14,13 @@ class CEFOReMeasurement:
             "2hop": [],
             "3hop": []
         }
+        # Raspberry Pi に接続された全ノード
+        self.serial_ports = {
+            "bridge": "/dev/ttyAMA0",
+            "sensor_a": "/dev/ttyUSB0",
+            "sensor_b": "/dev/ttyUSB1",
+            "sensor_c": "/dev/ttyUSB2"
+        }
 
     def run_cefgetfile(self, content_path, hop_label):
         """1回のcefgetfileを実行"""
@@ -48,33 +55,47 @@ class CEFOReMeasurement:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    def collect_sensor_data(self, node_type):
-        """Sensor（またはBridge）からメモリバッファを取得"""
+    def reset_all_buffers(self):
+        """全ノードのバッファをリセット"""
+        print("  → Resetting all sensor buffers...")
+        for node_name, port in self.serial_ports.items():
+            try:
+                subprocess.run(
+                    f"echo 'reset_perf' | sudo tee {port}",
+                    shell=True,
+                    capture_output=True,
+                    timeout=3
+                )
+                time.sleep(0.3)
+            except Exception as e:
+                print(f"    [WARN] Failed to reset {node_name}: {e}")
+
+    def collect_sensor_data(self, node_name):
+        """指定ノードからメモリバッファを取得"""
+
+        if node_name not in self.serial_ports:
+            return {"status": "unknown_node"}
+
+        port = self.serial_ports[node_name]
 
         try:
-            # シリアルコマンド実行（複数のポートを試す）
-            ports = ["/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyACM0"]
+            result = subprocess.run(
+                f"echo 'dump_perf' | timeout 2 picocom -b 115200 {port}",
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
 
-            for port in ports:
-                try:
-                    result = subprocess.run(
-                        f"echo 'dump_perf' | timeout 2 picocom -b 115200 {port}",
-                        shell=True,
-                        capture_output=True,
-                        text=True,
-                        timeout=3
-                    )
+            # JSON抽出
+            json_match = re.search(r'\{.*\}', result.stdout, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(0))
+            else:
+                return {"status": "parse_error"}
 
-                    # JSON抽出
-                    json_match = re.search(r'\{.*\}', result.stdout, re.DOTALL)
-                    if json_match:
-                        return json.loads(json_match.group(0))
-
-                except Exception:
-                    continue
-
-            return {"status": "no_response"}
-
+        except subprocess.TimeoutExpired:
+            return {"status": "timeout"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -83,13 +104,8 @@ class CEFOReMeasurement:
 
         print(f"\n[MEASURE] {hop_label}: {num_iterations} iterations")
 
-        # ノードのメモリバッファをリセット
-        print("  → Resetting sensor buffers...")
-        subprocess.run(
-            "echo 'reset_perf' | picocom -b 115200 /dev/ttyUSB0",
-            shell=True,
-            capture_output=True
-        )
+        # 全ノードのバッファをリセット
+        self.reset_all_buffers()
         time.sleep(1)
 
         cefore_times = []
@@ -117,22 +133,23 @@ class CEFOReMeasurement:
 
         # 測定完了後、各ノードのデータを収集
         print("  → Collecting sensor measurements...")
-        bridge_data = self.collect_sensor_data("bridge")
-        sensor_a_data = self.collect_sensor_data("sensor_a")
-        sensor_b_data = self.collect_sensor_data("sensor_b")
-        sensor_c_data = self.collect_sensor_data("sensor_c")
+        sensor_measurements = {}
+        for node_name in ["bridge", "sensor_a", "sensor_b", "sensor_c"]:
+            print(f"    [{node_name}]", end=" ", flush=True)
+            data = self.collect_sensor_data(node_name)
+            sensor_measurements[node_name] = data
+            if data.get("status") in ("error", "timeout", "parse_error", "unknown_node"):
+                print("✗ (skipped)")
+            else:
+                print("✓")
+            time.sleep(0.3)
 
         # 結果をまとめる
         result = {
             "hop_label": hop_label,
             "num_iterations": num_iterations,
             "cefore_times_us": cefore_times,
-            "bridge_data": bridge_data,
-            "sensor_data": {
-                "A": sensor_a_data,
-                "B": sensor_b_data,
-                "C": sensor_c_data
-            }
+            "sensor_measurements": sensor_measurements
         }
 
         self.results[hop_label] = result
@@ -163,13 +180,17 @@ class CEFOReMeasurement:
         print(f"    Max:    {max(times):8}")
         print(f"    P95:    {times[int(n*0.95)]:8}")
 
-        # Bridge/Sensor処理時間も表示
-        if result["bridge_data"].get("bridge"):
-            bridge_ota = [m["ota_us"] for m in result["bridge_data"]["bridge"]]
-            print(f"\n  Bridge OTA (µs):")
-            print(f"    Mean: {sum(bridge_ota) / len(bridge_ota):8.1f}")
-            print(f"    Min:  {min(bridge_ota):8}")
-            print(f"    Max:  {max(bridge_ota):8}")
+        # ノード別OTA統計表示
+        sensors = result.get("sensor_measurements", {})
+        for node_name in ["bridge", "sensor_a", "sensor_b", "sensor_c"]:
+            node_data = sensors.get(node_name, {})
+            if node_data.get("measurements"):
+                ota_times = [m.get("ota_us", 0) for m in node_data["measurements"]]
+                if ota_times:
+                    print(f"\n  {node_name.replace('_', ' ').upper()} OTA (µs):")
+                    print(f"    Mean: {sum(ota_times) / len(ota_times):8.1f}")
+                    print(f"    Min:  {min(ota_times):8}")
+                    print(f"    Max:  {max(ota_times):8}")
 
     def export_results(self, filename="measurements.json"):
         """結果をJSONファイルに保存"""
