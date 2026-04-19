@@ -41,6 +41,19 @@ std::string NameMapper::removeTimestamp(const std::string& timestamped_name) {
         return timestamped_name;
     }
 
-    // コンテンツ名を抽出（タイムスタンプなし）
-    return timestamped_name.substr(0, last_slash);
+    // タイムスタンプを除去
+    std::string name = timestamped_name.substr(0, last_slash);
+
+    // "ccnx:/" スキームプレフィックスを除去して '/' ルートのパスに正規化
+    // 例: "ccnx:/iot/buildingA/room101/temp" → "/iot/buildingA/room101/temp"
+    const std::string scheme = "ccnx:";
+    if (name.compare(0, scheme.size(), scheme) == 0) {
+        name = name.substr(scheme.size());
+        // "ccnx:" の後に '/' がなければ補完
+        if (name.empty() || name[0] != '/') {
+            name = "/" + name;
+        }
+    }
+
+    return name;
 }
