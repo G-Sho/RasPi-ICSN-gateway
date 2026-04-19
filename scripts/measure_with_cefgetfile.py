@@ -12,6 +12,19 @@ HOP_SENSOR_NODES = {
     "3hop": ["sensor_a", "sensor_b", "sensor_c"],
 }
 
+# hop パターンごとにキャッシュをクリアすべき中間ノードの対応表
+# Data が終端センサーから戻る経路上で中間ノードが Data をキャッシュするため，
+# 各イテレーション前にこれらのノードのキャッシュを削除しないと
+# 2回目以降の Interest が中間ノードで返されて事実上 hop 数が短縮されてしまう
+# 1hop: 中間ノードなし
+# 2hop: A が B からの Data をキャッシュする
+# 3hop: B が C からの Data を，A が B/C からの Data をキャッシュする
+HOP_INTERMEDIATE_NODES = {
+    "1hop": [],
+    "2hop": ["sensor_a"],
+    "3hop": ["sensor_a", "sensor_b"],
+}
+
 class CEFOReMeasurement:
     def __init__(self, gateway_host="localhost"):
         self.gateway_host = gateway_host
@@ -102,6 +115,23 @@ class CEFOReMeasurement:
         except Exception as e:
             print(f"    [WARN] flush_cefore_cache failed: {e}")
 
+    def flush_node_caches(self, node_names):
+        """中間 ESP32 ノードのコンテンツキャッシュをクリアする
+
+        Data パケットが終端センサーから戻る経路で中間ノードにキャッシュされるため，
+        2 回目以降の Interest が中間ノードで返されて hop 数が短縮されるのを防ぐ．
+        """
+        for node_name in node_names:
+            port = self.serial_ports.get(node_name)
+            if port is None:
+                print(f"    [WARN] Unknown node for cache flush: {node_name}")
+                continue
+            try:
+                with open(port, "wb") as dev:
+                    dev.write(b"clearcache\n")
+            except Exception as e:
+                print(f"    [WARN] flush_node_caches to {node_name} ({port}) failed: {e}")
+
     def collect_sensor_data(self, node_name):
         """指定ノードからメモリバッファを取得"""
 
@@ -136,14 +166,17 @@ class CEFOReMeasurement:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    def measure_pattern(self, content_path, hop_label, num_iterations=50, sensor_nodes=None):
+    def measure_pattern(self, content_path, hop_label, num_iterations=50, sensor_nodes=None, intermediate_nodes=None):
         """パターン1回分を測定"""
 
         if sensor_nodes is None:
             sensor_nodes = HOP_SENSOR_NODES.get(hop_label, [])
+        if intermediate_nodes is None:
+            intermediate_nodes = HOP_INTERMEDIATE_NODES.get(hop_label, [])
 
         print(f"\n[MEASURE] {hop_label}: {num_iterations} iterations")
-        print(f"  readsensor nodes: {sensor_nodes}")
+        print(f"  readsensor nodes:    {sensor_nodes}")
+        print(f"  intermediate nodes:  {intermediate_nodes}")
 
         # 全ノードのメモリバッファをリセット
         self.reset_all_buffers()
@@ -153,16 +186,20 @@ class CEFOReMeasurement:
         for i in range(num_iterations):
             print(f"    [{i+1}/{num_iterations}]", end="", flush=True)
 
-            # 1) キャッシュをクリア（前回の Data が CS に残っているため毎回削除）
+            # 1) ゲートウェイ (cefnetd) の CS から前回の Data を削除
             self.flush_cefore_cache(content_path)
 
-            # 2) 対象センサーノードに readsensor を送信してデータを生成
+            # 2) 中間 ESP32 ノードのキャッシュをクリア
+            #    （これをしないと 2 回目以降の Interest が中間ノードで返されて hop 数が短縮される）
+            self.flush_node_caches(intermediate_nodes)
+
+            # 3) 対象センサーノードに readsensor を送信してデータを生成
             self.send_readsensor(sensor_nodes)
 
             # センサーが応答できるまで少し待つ
             time.sleep(0.1)
 
-            # 3) cefgetfile 実行
+            # 4) cefgetfile 実行
             measurement = self.run_cefgetfile(content_path, hop_label)
 
             if measurement["status"] == "ok":
@@ -275,7 +312,8 @@ class CEFOReMeasurement:
             "/iot/buildingA/room101/1hop",
             "1hop",
             num_iterations,
-            sensor_nodes=HOP_SENSOR_NODES["1hop"]
+            sensor_nodes=HOP_SENSOR_NODES["1hop"],
+            intermediate_nodes=HOP_INTERMEDIATE_NODES["1hop"]
         )
 
         time.sleep(2)
@@ -285,7 +323,8 @@ class CEFOReMeasurement:
             "/iot/buildingA/room101/2hop",
             "2hop",
             num_iterations,
-            sensor_nodes=HOP_SENSOR_NODES["2hop"]
+            sensor_nodes=HOP_SENSOR_NODES["2hop"],
+            intermediate_nodes=HOP_INTERMEDIATE_NODES["2hop"]
         )
 
         time.sleep(2)
@@ -295,7 +334,8 @@ class CEFOReMeasurement:
             "/iot/buildingA/room101/3hop",
             "3hop",
             num_iterations,
-            sensor_nodes=HOP_SENSOR_NODES["3hop"]
+            sensor_nodes=HOP_SENSOR_NODES["3hop"],
+            intermediate_nodes=HOP_INTERMEDIATE_NODES["3hop"]
         )
 
         # 結果保存
