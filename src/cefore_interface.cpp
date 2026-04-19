@@ -12,7 +12,7 @@ CeforeInterface::~CeforeInterface() {
 
 // CEFORE公式ツール方式の初期化 (cefore/tools/cefgetchunk/cefgetchunk.c:224-248)
 bool CeforeInterface::init(int port_num, const char* config_path) {
-    std::cout << "[INFO] Initializing Cefore..." << std::endl;
+    // std::cout << "[INFO] Initializing Cefore..." << std::endl;
 
     // 1. cef_log_init2 を使用（CEFOREの公式ツールと同じ）
     cef_log_init2((char*)config_path, 1 /* for CEFNETD */);
@@ -23,23 +23,23 @@ bool CeforeInterface::init(int port_num, const char* config_path) {
     // 3. cef_client_init
     int res = cef_client_init(port_num, (char*)config_path);
     if (res < 0) {
-        std::cerr << "[ERROR] cef_client_init failed: " << res << std::endl;
-        std::cerr << "[INFO] Check:" << std::endl;
-        std::cerr << "  1. cefnetd is running (check with: cefstatus)" << std::endl;
-        std::cerr << "  2. /usr/local/cefore/cefnetd.conf exists and is valid" << std::endl;
-        std::cerr << "  3. PORT_NUM is set in cefnetd.conf (default: 9896)" << std::endl;
+        // std::cerr << "[ERROR] cef_client_init failed: " << res << std::endl;
+        // std::cerr << "[INFO] Check:" << std::endl;
+        // std::cerr << "  1. cefnetd is running (check with: cefstatus)" << std::endl;
+        // std::cerr << "  2. /usr/local/cefore/cefnetd.conf exists and is valid" << std::endl;
+        // std::cerr << "  3. PORT_NUM is set in cefnetd.conf (default: 9896)" << std::endl;
         return false;
     }
 
     // 4. cef_client_connect
     handle_ = cef_client_connect();
     if (handle_ < 1) {
-        std::cerr << "[ERROR] cef_client_connect failed (handle=" << handle_ << ")" << std::endl;
-        std::cerr << "[INFO] Make sure cefnetd is running: sudo cefnetdstart" << std::endl;
+        // std::cerr << "[ERROR] cef_client_connect failed (handle=" << handle_ << ")" << std::endl;
+        // std::cerr << "[INFO] Make sure cefnetd is running: sudo cefnetdstart" << std::endl;
         return false;
     }
 
-    std::cout << "[INFO] Connected to cefnetd (handle=" << handle_ << ")" << std::endl;
+    // std::cout << "[INFO] Connected to cefnetd (handle=" << handle_ << ")" << std::endl;
     return true;
 }
 
@@ -51,7 +51,7 @@ void CeforeInterface::close() {
         nanosleep(&ts, nullptr);
         cef_client_close(handle_);
         handle_ = 0;
-        std::cout << "[INFO] Closed cefore connection" << std::endl;
+        // std::cout << "[INFO] Closed cefore connection" << std::endl;
     }
 }
 
@@ -69,7 +69,7 @@ bool CeforeInterface::sendData(const char* uri,
                                 uint64_t cache_time_ms,
                                 uint64_t expiry_ms) {
     if (handle_ < 1) {
-        std::cerr << "[ERROR] Handle not initialized" << std::endl;
+        // std::cerr << "[ERROR] Handle not initialized" << std::endl;
         return false;
     }
 
@@ -82,14 +82,14 @@ bool CeforeInterface::sendData(const char* uri,
     // URI → Name変換
     int res = cef_frame_conversion_uri_to_name(uri, params.name);
     if (res < 0) {
-        std::cerr << "[ERROR] Invalid URI: " << uri << std::endl;
+        // std::cerr << "[ERROR] Invalid URI: " << uri << std::endl;
         return false;
     }
     params.name_len = res;
 
     // ペイロード設定
     if (payload_len > CefC_Max_Length) {
-        std::cerr << "[ERROR] Payload too large: " << payload_len << std::endl;
+        // std::cerr << "[ERROR] Payload too large: " << payload_len << std::endl;
         return false;
     }
     memcpy(params.payload, payload, payload_len);
@@ -114,7 +114,7 @@ bool CeforeInterface::sendData(const char* uri,
     // Data送信 (cefpyco.c:150)
     res = cef_client_object_input(handle_, &opt, &params);
     if (res < 0) {
-        std::cerr << "[ERROR] cef_client_object_input failed" << std::endl;
+        // std::cerr << "[ERROR] cef_client_object_input failed" << std::endl;
         return false;
     }
 
@@ -126,7 +126,7 @@ bool CeforeInterface::sendInterest(const char* uri,
                                     int chunk_num,
                                     uint32_t lifetime_ms) {
     if (handle_ < 1) {
-        std::cerr << "[ERROR] Handle not initialized" << std::endl;
+        // std::cerr << "[ERROR] Handle not initialized" << std::endl;
         return false;
     }
 
@@ -139,7 +139,7 @@ bool CeforeInterface::sendInterest(const char* uri,
     // URI → Name変換
     int res = cef_frame_conversion_uri_to_name(uri, params.name);
     if (res < 0) {
-        std::cerr << "[ERROR] Invalid URI: " << uri << std::endl;
+        // std::cerr << "[ERROR] Invalid URI: " << uri << std::endl;
         return false;
     }
     params.name_len = res;
@@ -155,7 +155,7 @@ bool CeforeInterface::sendInterest(const char* uri,
     // Interest送信 (cefpyco.c:139)
     res = cef_client_interest_input(handle_, &opt, &params);
     if (res < 0) {
-        std::cerr << "[ERROR] cef_client_interest_input failed" << std::endl;
+        // std::cerr << "[ERROR] cef_client_interest_input failed" << std::endl;
         return false;
     }
 
@@ -165,14 +165,14 @@ bool CeforeInterface::sendInterest(const char* uri,
 // cefpyco: call_register_api (cefpyco.c:162-174)
 bool CeforeInterface::callRegisterAPI(uint16_t func, const char* uri) {
     if (handle_ < 1) {
-        std::cerr << "[ERROR] Handle not initialized" << std::endl;
+        // std::cerr << "[ERROR] Handle not initialized" << std::endl;
         return false;
     }
 
     unsigned char name[CefC_Max_Length];
     int res = cef_frame_conversion_uri_to_name(uri, name);
     if (res < 0) {
-        std::cerr << "[ERROR] Invalid URI: " << uri << std::endl;
+        // std::cerr << "[ERROR] Invalid URI: " << uri << std::endl;
         return false;
     }
 
@@ -184,27 +184,27 @@ bool CeforeInterface::callRegisterAPI(uint16_t func, const char* uri) {
     struct timespec ts = {0, 100L * 1000L * 1000L};  // 100ms
     nanosleep(&ts, nullptr);
 
-    std::cout << "[DEBUG] Prefix registration sent to cefnetd" << std::endl;
+    // std::cout << "[DEBUG] Prefix registration sent to cefnetd" << std::endl;
 
     return true;
 }
 
 // cefpyco: register_name (cefpyco.c:94)
 bool CeforeInterface::registerName(const char* uri) {
-    std::cout << "[INFO] Registering name: " << uri << std::endl;
+    // std::cout << "[INFO] Registering name: " << uri << std::endl;
     return callRegisterAPI(CefC_App_Reg, uri);
 }
 
 // cefpyco: deregister_name (cefpyco.c:95)
 bool CeforeInterface::deregisterName(const char* uri) {
-    std::cout << "[INFO] Deregistering name: " << uri << std::endl;
+    // std::cout << "[INFO] Deregistering name: " << uri << std::endl;
     return callRegisterAPI(CefC_App_DeReg, uri);
 }
 
 // cefpyco: wait_receive相当 (cefpyco.c:319-346)
 int CeforeInterface::receive(uint8_t* buffer, int buffer_size, int timeout_ms) {
     if (handle_ < 1) {
-        std::cerr << "[ERROR] Handle not initialized" << std::endl;
+        // std::cerr << "[ERROR] Handle not initialized" << std::endl;
         return -1;
     }
 
