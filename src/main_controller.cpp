@@ -223,6 +223,12 @@ void MainController::onRxPacket(const RxPacket& packet) {
         // コンテンツ名にccnx:/スキームを付加
         std::string cefore_uri = NameMapper::addScheme(data.content_name);
 
+        // CSキャッシュに保存（遅れたInterestに即答するため）
+        cs_.insert_or_assign(data.content_name,
+                             CsEntry{std::chrono::steady_clock::now(),
+                                     std::string(data.content),
+                                     cefore_uri});
+
         // 初回受信時は名前登録（冪等性あり）
         cefore_->registerName(cefore_uri.c_str());
 
@@ -303,6 +309,23 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
     }
 
     // ICSNへInterest転送（転送成功時のみPITに登録）
+    // まずCSキャッシュを確認する（遅れたchunkへの即答）
+    auto cs_it = cs_.find(content_name);
+    if (cs_it != cs_.end()) {
+        auto cs_elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - cs_it->second.time).count();
+        if (cs_elapsed_ms < CS_TTL_MS) {
+            // CSキャッシュヒット: ESP32への新規リクエストなしにキャッシュから即答
+            int payload_len = static_cast<int>(cs_it->second.content.size());
+            cefore_->sendData(cs_it->second.cefore_uri.c_str(),
+                              chunk_num,
+                              (const uint8_t*)cs_it->second.content.c_str(),
+                              payload_len);
+            return;
+        }
+        // キャッシュ期限切れ、削除して通常フローへ
+        cs_.erase(cs_it);
+    }
+
     if (forwardToICSN(content_name)) {
         auto& entry = pit_[content_name];
         entry.time = now;
