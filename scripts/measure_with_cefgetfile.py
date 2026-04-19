@@ -4,6 +4,7 @@ import subprocess
 import json
 import time
 import re
+import serial
 
 # hop パターンごとに readsensor を送るノードの対応表
 HOP_SENSOR_NODES = {
@@ -73,17 +74,17 @@ class CEFOReMeasurement:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
+    def _serial_write(self, port, command: bytes):
+        """115200bps で1コマンドを送信する"""
+        with serial.Serial(port, baudrate=115200, timeout=1) as ser:
+            ser.write(command)
+
     def reset_all_buffers(self):
         """全ノードのバッファをリセット"""
         print("  → Resetting all sensor buffers...")
         for node_name, port in self.serial_ports.items():
             try:
-                subprocess.run(
-                    ["sudo", "tee", port],
-                    input=b"reset_perf\n",
-                    capture_output=True,
-                    timeout=3
-                )
+                self._serial_write(port, b"reset_perf\n")
                 time.sleep(0.3)
             except Exception as e:
                 print(f"    [WARN] Failed to reset {node_name}: {e}")
@@ -96,8 +97,7 @@ class CEFOReMeasurement:
                 print(f"    [WARN] Unknown node for readsensor: {node_name}")
                 continue
             try:
-                with open(port, "wb") as dev:
-                    dev.write(b"read_sensor\n")
+                self._serial_write(port, b"read_sensor\n")
             except Exception as e:
                 print(f"    [WARN] readsensor to {node_name} ({port}) failed: {e}")
 
@@ -127,8 +127,7 @@ class CEFOReMeasurement:
                 print(f"    [WARN] Unknown node for cache flush: {node_name}")
                 continue
             try:
-                with open(port, "wb") as dev:
-                    dev.write(b"clear_cache\n")
+                self._serial_write(port, b"clear_cache\n")
             except Exception as e:
                 print(f"    [WARN] flush_node_caches to {node_name} ({port}) failed: {e}")
 
@@ -232,8 +231,8 @@ class CEFOReMeasurement:
             # 3) 対象センサーノードに readsensor を送信してデータを生成
             self.send_readsensor(sensor_nodes)
 
-            # センサーが応答できるまで少し待つ
-            time.sleep(0.1)
+            # センサーが応答できるまで待つ（CSへの格納を含む）
+            time.sleep(0.5)
 
             # 4) cefgetfile 実行
             measurement = self.run_cefgetfile(content_path, hop_label)
@@ -343,9 +342,11 @@ class CEFOReMeasurement:
         print("ICSN Performance Measurement with CEFORE")
         print("="*60)
 
+        content_name = "/iot/buildingA/room101"
+
         # Pattern 1: 1hop (bridge → A)
         self.measure_pattern(
-            "/iot/buildingA/room101/1hop",
+            content_name,
             "1hop",
             num_iterations,
             sensor_nodes=HOP_SENSOR_NODES["1hop"],
@@ -357,7 +358,7 @@ class CEFOReMeasurement:
 
         # Pattern 2: 2hop (bridge → A → B)
         self.measure_pattern(
-            "/iot/buildingA/room101/2hop",
+            content_name,
             "2hop",
             num_iterations,
             sensor_nodes=HOP_SENSOR_NODES["2hop"],
@@ -369,7 +370,7 @@ class CEFOReMeasurement:
 
         # Pattern 3: 3hop (bridge → A → B → C)
         self.measure_pattern(
-            "/iot/buildingA/room101/3hop",
+            content_name,
             "3hop",
             num_iterations,
             sensor_nodes=HOP_SENSOR_NODES["3hop"],
