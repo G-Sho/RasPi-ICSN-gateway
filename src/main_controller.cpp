@@ -63,7 +63,7 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
     // ICSNセンサーのルートプレフィックスを登録
     // 実際のセンサー名に応じて変更
     const char* prefixes[] = {
-        "ccnx:/icsn",
+        "ccnx:/iot/buildingA/room101",
         nullptr
     };
 
