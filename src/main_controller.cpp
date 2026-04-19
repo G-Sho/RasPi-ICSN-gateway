@@ -1,6 +1,8 @@
 #include "main_controller.h"
 #include "third_party/base64.h"
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <cstring>
 #include <signal.h>
 #include <unistd.h>
@@ -21,7 +23,8 @@ MainController::~MainController() {
     shutdown();
 }
 
-bool MainController::initialize(const std::string& uart_device, int baudrate) {
+bool MainController::initialize(const std::string& uart_device, int baudrate,
+                                const std::string& fib_config_path) {
     std::cout << "[INFO] Creating components..." << std::endl;
 
     // コンポーネント作成
@@ -30,6 +33,11 @@ bool MainController::initialize(const std::string& uart_device, int baudrate) {
     cefore_ = std::make_unique<CeforeInterface>();
     name_mapper_ = std::make_unique<NameMapper>();
     fib_ = std::make_unique<GatewayFIB>();
+
+    // 設定ファイルから初期 FIB エントリを読み込む（静的ルート）
+    if (!fib_config_path.empty()) {
+        loadFIBConfig(fib_config_path);
+    }
 
     // CEFORE初期化（cefpyco方式: init()でconnectまで完了）
     // cefpycoのテストと同様に、空文字列を渡す (test_cefpyco.c:38)
@@ -55,7 +63,7 @@ bool MainController::initialize(const std::string& uart_device, int baudrate) {
     // ICSNセンサーのルートプレフィックスを登録
     // 実際のセンサー名に応じて変更
     const char* prefixes[] = {
-        "ccnx:/icsn",
+        "ccnx:/iot/buildingA/room101",
         nullptr
     };
 
@@ -129,6 +137,36 @@ void MainController::shutdown() {
     }
 }
 
+void MainController::loadFIBConfig(const std::string& fib_config_path) {
+    std::ifstream file(fib_config_path);
+    if (!file.is_open()) {
+        std::cerr << "[WARN] Failed to open FIB config file: " << fib_config_path << std::endl;
+        return;
+    }
+
+    std::cout << "[INFO] Loading initial FIB from: " << fib_config_path << std::endl;
+    int count = 0;
+    std::string line;
+    while (std::getline(file, line)) {
+        // コメント行・空行をスキップ
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+
+        std::istringstream iss(line);
+        std::string prefix, mac;
+        if (!(iss >> prefix >> mac)) {
+            std::cerr << "[WARN] Skipping invalid FIB config line: " << line << std::endl;
+            continue;
+        }
+
+        fib_->save(prefix, {mac});
+        std::cout << "[INFO] Static FIB: " << prefix << " -> " << mac << std::endl;
+        ++count;
+    }
+    std::cout << "[INFO] Loaded " << count << " static FIB entries" << std::endl;
+}
+
 void MainController::onRxPacket(const RxPacket& packet) {
     PacketParser::SensorData data;
 
@@ -153,7 +191,7 @@ void MainController::onRxPacket(const RxPacket& packet) {
 
         // 初回受信時は名前登録（冪等性あり）
         // 例: "/sensor/temp/12345" → "/sensor/temp" を登録
-        cefore_->registerName(data.content_name);
+        cefore_->registerName(NameMapper::addScheme(data.content_name).c_str());
 
         // CEFOREに公開（cefpyco方式: sendData）
         int payload_len = strlen(data.content);

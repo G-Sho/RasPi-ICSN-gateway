@@ -15,13 +15,15 @@ public:
     MainController();
     ~MainController();
 
-    bool initialize(const std::string& uart_device, int baudrate);
+    bool initialize(const std::string& uart_device, int baudrate,
+                    const std::string& fib_config_path = "");
     void run();
     void shutdown();
 
 private:
     void onRxPacket(const RxPacket& packet);
     void onInterest(const std::string& uri, uint32_t chunk_num);
+    void loadFIBConfig(const std::string& fib_config_path);
 
     std::unique_ptr<UARTReceiver> uart_;
     std::unique_ptr<PacketParser> parser_;

@@ -102,6 +102,58 @@ struct __attribute__((packed)) CommunicationData {
 3. `GatewayFIB` が最長プレフィックス一致で MAC アドレスを検索
 4. `UARTReceiver` が UART 経由で ESP32 へ Interest を転送
 
+## テストトポロジーとブランチ方針
+
+### テスト経路
+
+```
+RasPi gateway --UART--> bridge --ESP-NOW--> sensor(A) --ESP-NOW--> sensor(B) --ESP-NOW--> sensor(C)
+```
+
+### テスト用 MAC アドレス
+
+| ノード    | MAC アドレス        |
+|-----------|---------------------|
+| bridge    | `08:D1:F9:37:39:C0` |
+| sensor A  | `CC:7B:5C:9A:F3:C4` |
+| sensor B  | `CC:7B:5C:9A:F3:AC` |
+| sensor C  | `9C:9C:1F:CF:F4:8C` |
+
+### 責務分担（FIB/ルーティング）
+
+各ノードは「自分の直接の次ホップ」だけを決定します。
+
+| ノード     | 決定する次ホップ          | 設定箇所                                      |
+|------------|--------------------------|-----------------------------------------------|
+| **gateway**  | 次ホップ = bridge        | `config/test_fib.conf`（本リポジトリ）         |
+| **bridge**   | 次ホップ = sensor(A)     | `ESP32-ICSN-bridge` リポジトリのテストブランチ |
+| **sensor(A)**| 次ホップ = sensor(B)     | `ESP32-ICSN-sensor-node` テストブランチ        |
+| **sensor(B)**| 次ホップ = sensor(C)     | `ESP32-ICSN-sensor-node` テストブランチ        |
+| **sensor(C)**| 末端（データ発信源）      | `ESP32-ICSN-sensor-node` テストブランチ        |
+
+> **ポイント**: gateway は bridge の MAC アドレスしか直接知らない。  
+> センサー A/B/C への Interest は、`/icsn` プレフィックスの最長一致で bridge 宛に転送される。  
+> bridge 以降の転送（bridge→A, A→B, B→C）は各ノードが自身の FIB で解決する。
+
+### テスト用ブランチの初期 FIB 設定（gateway）
+
+`config/test_fib.conf` に静的 FIB エントリが記述されています。  
+このファイルを起動時の第 3 引数に渡すことで初期 FIB を投入できます。
+
+```bash
+# テストトポロジーの初期 FIB を使って起動（cefnetd が稼働していること）
+sudo ./gateway /dev/serial0 115200 ../config/test_fib.conf
+```
+
+FIB エントリの例:
+
+```
+# /icsn 配下のすべての Interest を bridge (08:D1:F9:37:39:C0) へ転送
+/icsn 08:D1:F9:37:39:C0
+```
+
+---
+
 ## 設定
 
 | パラメータ | デフォルト値 |
