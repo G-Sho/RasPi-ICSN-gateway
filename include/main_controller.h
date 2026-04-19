@@ -44,4 +44,14 @@ private:
     };
     std::unordered_map<std::string, PitEntry> pit_;
     static constexpr int PIT_TIMEOUT_MS = 5000;  // 同一名前の重複Interest抑制期間(ms)
+
+    // CS (Content Store) キャッシュ: 直近のセンサー値を短時間保持する
+    // chunk=3などが遅れて届いた際に、ESP32への再リクエストなしで即答するために使用
+    struct CsEntry {
+        std::chrono::steady_clock::time_point time;
+        std::string content;      // センサー値（生文字列）
+        std::string cefore_uri;   // ccnx:/ スキーム付きURI
+    };
+    std::unordered_map<std::string, CsEntry> cs_;
+    static constexpr int CS_TTL_MS = 2000;  // CSキャッシュ有効期間(ms)
 };
