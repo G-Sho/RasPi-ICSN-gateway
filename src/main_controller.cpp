@@ -183,25 +183,36 @@ void MainController::onRxPacket(const RxPacket& packet) {
         // FIBエントリ学習（content_name → MAC）
         fib_->save(data.content_name, {packet.sender_mac});
 
-        // PITエントリを削除（データが届いたので重複抑制を解除）
-        pit_.erase(data.content_name);
+        // PITエントリから待機中チャンク番号を取得して削除
+        std::set<uint32_t> pending_chunks;
+        auto pit_it = pit_.find(data.content_name);
+        if (pit_it != pit_.end()) {
+            pending_chunks = pit_it->second.pending_chunks;
+            pit_.erase(pit_it);
+        }
 
         // コンテンツ名にタイムスタンプ付加
         std::string timestamped_uri = name_mapper_->addTimestamp(data.content_name);
 
         // 初回受信時は名前登録（冪等性あり）
-        // 例: "/sensor/temp/12345" → "/sensor/temp" を登録
         cefore_->registerName(NameMapper::addScheme(data.content_name).c_str());
 
-        // CEFOREに公開（cefpyco方式: sendData）
+        // 待機中の全チャンク番号に対してCEFOREへ公開
         int payload_len = strlen(data.content);
-        if (cefore_->sendData(timestamped_uri.c_str(),
-                             0,  // chunk_num
-                             (const uint8_t*)data.content,
-                             payload_len)) {
-            std::cout << "[INFO] Published to CEFORE: " << timestamped_uri << std::endl;
-        } else {
-            std::cerr << "[ERROR] Failed to publish to CEFORE" << std::endl;
+        if (pending_chunks.empty()) {
+            // PITエントリが存在しない場合はチャンク番号0でフォールバック
+            pending_chunks.insert(0);
+        }
+        for (uint32_t chunk : pending_chunks) {
+            if (cefore_->sendData(timestamped_uri.c_str(),
+                                  chunk,
+                                  (const uint8_t*)data.content,
+                                  payload_len)) {
+                std::cout << "[INFO] Published to CEFORE: " << timestamped_uri
+                          << " (chunk=" << chunk << ")" << std::endl;
+            } else {
+                std::cerr << "[ERROR] Failed to publish to CEFORE (chunk=" << chunk << ")" << std::endl;
+            }
         }
     }
 }
@@ -212,14 +223,18 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
     // タイムスタンプを除去してICSNコンテンツ名取得
     std::string content_name = name_mapper_->removeTimestamp(uri);
 
-    // PIT重複チェック: 同一コンテンツ名のInterestが既に転送済みであれば抑制
+    // PIT重複チェック: 同一コンテンツ名のInterestが既に転送済みであれば
+    // チャンク番号を集約して抑制
     auto now = std::chrono::steady_clock::now();
     auto it = pit_.find(content_name);
     if (it != pit_.end()) {
-        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second).count();
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second.time).count();
         if (elapsed_ms < PIT_TIMEOUT_MS) {
-            std::cout << "[INFO] Suppressing duplicate Interest for: " << content_name
-                      << " (pending since " << elapsed_ms << "ms ago)" << std::endl;
+            // 同一コンテンツ名への待機中Interestにチャンク番号を追加
+            it->second.pending_chunks.insert(chunk_num);
+            std::cout << "[INFO] Aggregating chunk " << chunk_num << " into pending Interest for: "
+                      << content_name << " (" << it->second.pending_chunks.size()
+                      << " chunks pending)" << std::endl;
             return;
         }
         // タイムアウト済みのエントリを削除
@@ -260,8 +275,8 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
         }
     }
 
-    // 転送成功時のみPITに登録（重複抑制用）
+    // 転送成功時のみPITに登録（重複抑制・チャンク集約用）
     if (forwarded) {
-        pit_[content_name] = now;
+        pit_[content_name] = {now, {chunk_num}};
     }
 }
