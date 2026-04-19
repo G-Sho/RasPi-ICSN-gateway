@@ -5,6 +5,13 @@ import json
 import time
 import re
 
+# hop パターンごとに readsensor を送るノードの対応表
+HOP_SENSOR_NODES = {
+    "1hop": ["sensor_a"],
+    "2hop": ["sensor_a", "sensor_b"],
+    "3hop": ["sensor_a", "sensor_b", "sensor_c"],
+}
+
 class CEFOReMeasurement:
     def __init__(self, gateway_host="localhost"):
         self.gateway_host = gateway_host
@@ -68,6 +75,33 @@ class CEFOReMeasurement:
             except Exception as e:
                 print(f"    [WARN] Failed to reset {node_name}: {e}")
 
+    def send_readsensor(self, node_names):
+        """指定ノードへ readsensor コマンドを送信してデータを生成させる"""
+        for node_name in node_names:
+            port = self.serial_ports.get(node_name)
+            if port is None:
+                print(f"    [WARN] Unknown node for readsensor: {node_name}")
+                continue
+            try:
+                with open(port, "wb") as dev:
+                    dev.write(b"readsensor\n")
+            except Exception as e:
+                print(f"    [WARN] readsensor to {node_name} ({port}) failed: {e}")
+
+    def flush_cefore_cache(self, content_path):
+        """cefnetd の CS から対象コンテンツのキャッシュを削除する"""
+        uri = f"ccnx:{content_path}"
+        try:
+            subprocess.run(
+                ["cefctrl", "cs", "del", uri],
+                capture_output=True,
+                timeout=5
+            )
+        except FileNotFoundError:
+            pass  # cefctrl が無い環境ではスキップ
+        except Exception as e:
+            print(f"    [WARN] flush_cefore_cache failed: {e}")
+
     def collect_sensor_data(self, node_name):
         """指定ノードからメモリバッファを取得"""
 
@@ -102,10 +136,14 @@ class CEFOReMeasurement:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    def measure_pattern(self, content_path, hop_label, num_iterations=50):
+    def measure_pattern(self, content_path, hop_label, num_iterations=50, sensor_nodes=None):
         """パターン1回分を測定"""
 
+        if sensor_nodes is None:
+            sensor_nodes = HOP_SENSOR_NODES.get(hop_label, [])
+
         print(f"\n[MEASURE] {hop_label}: {num_iterations} iterations")
+        print(f"  readsensor nodes: {sensor_nodes}")
 
         # 全ノードのメモリバッファをリセット
         self.reset_all_buffers()
@@ -115,7 +153,16 @@ class CEFOReMeasurement:
         for i in range(num_iterations):
             print(f"    [{i+1}/{num_iterations}]", end="", flush=True)
 
-            # cefgetfile実行
+            # 1) キャッシュをクリア（前回の Data が CS に残っているため毎回削除）
+            self.flush_cefore_cache(content_path)
+
+            # 2) 対象センサーノードに readsensor を送信してデータを生成
+            self.send_readsensor(sensor_nodes)
+
+            # センサーが応答できるまで少し待つ
+            time.sleep(0.1)
+
+            # 3) cefgetfile 実行
             measurement = self.run_cefgetfile(content_path, hop_label)
 
             if measurement["status"] == "ok":
@@ -227,7 +274,8 @@ class CEFOReMeasurement:
         self.measure_pattern(
             "/iot/buildingA/room101/1hop",
             "1hop",
-            num_iterations
+            num_iterations,
+            sensor_nodes=HOP_SENSOR_NODES["1hop"]
         )
 
         time.sleep(2)
@@ -236,7 +284,8 @@ class CEFOReMeasurement:
         self.measure_pattern(
             "/iot/buildingA/room101/2hop",
             "2hop",
-            num_iterations
+            num_iterations,
+            sensor_nodes=HOP_SENSOR_NODES["2hop"]
         )
 
         time.sleep(2)
@@ -245,7 +294,8 @@ class CEFOReMeasurement:
         self.measure_pattern(
             "/iot/buildingA/room101/3hop",
             "3hop",
-            num_iterations
+            num_iterations,
+            sensor_nodes=HOP_SENSOR_NODES["3hop"]
         )
 
         # 結果保存
