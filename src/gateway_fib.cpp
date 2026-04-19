@@ -102,9 +102,10 @@ int GatewayFIB::calculateDepth(const std::string& name) const {
         }
     }
 
-    // 名前が'/'で始まる場合は調整
-    if (name[0] == '/') {
-        depth--;
+    // 先頭の'/'はコンポーネント数に影響しない（"/a/b/c" はスラッシュ3個でコンポーネント3個）
+    // 先頭スラッシュなしの場合（例: "a/b/c"）はスラッシュ数+1がコンポーネント数
+    if (name[0] != '/') {
+        depth++;
     }
 
     return depth > 0 ? depth : 1;
