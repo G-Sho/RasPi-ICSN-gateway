@@ -221,8 +221,8 @@ void MainController::onRxPacket(const RxPacket& packet) {
 void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
     std::cout << "[INFO] Received Interest: " << uri << " (chunk=" << chunk_num << ")" << std::endl;
 
-    // スキームを除去してICSNコンテンツ名取得
-    std::string content_name = NameMapper::removeScheme(uri);
+    // スキームを除去し、CEFOREが付加したTLVコンポーネントを取り除いてICSNコンテンツ名取得
+    std::string content_name = NameMapper::stripCeforeComponents(NameMapper::removeScheme(uri));
 
     // PIT重複チェック: 同一コンテンツ名のInterestが既に転送済みであれば
     // チャンク番号を集約して抑制
