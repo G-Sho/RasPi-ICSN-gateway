@@ -1,2 +1,4 @@
 .claude/
 build
+__pycache__/
+*.pyc

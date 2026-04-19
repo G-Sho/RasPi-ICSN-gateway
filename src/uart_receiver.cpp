@@ -18,7 +18,7 @@ void UARTReceiver::start() {
     // UARTデバイスを開く
     fd_ = open(device_.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
     if (fd_ < 0) {
-        std::cerr << "Error opening " << device_ << ": " << strerror(errno) << std::endl;
+        // std::cerr << "Error opening " << device_ << ": " << strerror(errno) << std::endl;
         return;
     }
 
@@ -27,7 +27,7 @@ void UARTReceiver::start() {
     memset(&tty, 0, sizeof(tty));
 
     if (tcgetattr(fd_, &tty) != 0) {
-        std::cerr << "Error from tcgetattr: " << strerror(errno) << std::endl;
+        // std::cerr << "Error from tcgetattr: " << strerror(errno) << std::endl;
         close(fd_);
         fd_ = -1;
         return;
@@ -61,7 +61,7 @@ void UARTReceiver::start() {
     tty.c_cc[VTIME] = 1;
 
     if (tcsetattr(fd_, TCSANOW, &tty) != 0) {
-        std::cerr << "Error from tcsetattr: " << strerror(errno) << std::endl;
+        // std::cerr << "Error from tcsetattr: " << strerror(errno) << std::endl;
         close(fd_);
         fd_ = -1;
         return;
@@ -96,7 +96,7 @@ bool UARTReceiver::sendTxCommand(const std::string& mac, const std::vector<uint8
 
     ssize_t written = write(fd_, command.c_str(), command.size());
     if (written < 0) {
-        std::cerr << "UART write error: " << strerror(errno) << std::endl;
+        // std::cerr << "UART write error: " << strerror(errno) << std::endl;
         return false;
     }
 
@@ -129,7 +129,7 @@ void UARTReceiver::receiveLoop() {
                 }
             }
         } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-            std::cerr << "UART read error: " << strerror(errno) << std::endl;
+            // std::cerr << "UART read error: " << strerror(errno) << std::endl;
             break;
         }
         usleep(1000); // 1msスリープ
