@@ -97,7 +97,7 @@ class CEFOReMeasurement:
                 continue
             try:
                 with open(port, "wb") as dev:
-                    dev.write(b"readsensor\n")
+                    dev.write(b"read_sensor\n")
             except Exception as e:
                 print(f"    [WARN] readsensor to {node_name} ({port}) failed: {e}")
 
@@ -128,7 +128,7 @@ class CEFOReMeasurement:
                 continue
             try:
                 with open(port, "wb") as dev:
-                    dev.write(b"clearcache\n")
+                    dev.write(b"clear_cache\n")
             except Exception as e:
                 print(f"    [WARN] flush_node_caches to {node_name} ({port}) failed: {e}")
 
