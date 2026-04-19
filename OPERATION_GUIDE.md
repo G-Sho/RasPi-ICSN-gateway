@@ -133,7 +133,7 @@ make -j$(nproc)
 ビルドに成功すると `build/gateway` が生成されます。
 
 ```bash
-ls -lh build/gateway
+ls -lh gateway
 # 期待: -rwxr-xr-x ... gateway
 ```
 
@@ -200,6 +200,8 @@ sudo ./gateway /dev/serial0 115200 ../config/test_fib.conf
 
 # USB-UART アダプタを使用する場合
 sudo ./gateway /dev/ttyUSB0 115200 ../config/test_fib.conf
+# 引数: <UARTデバイス> <ボーレート>
+sudo ./gateway /dev/ttyAMA0 115200
 ```
 
 ### 正常起動時の出力例
