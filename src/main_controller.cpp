@@ -191,7 +191,7 @@ void MainController::onRxPacket(const RxPacket& packet) {
 
         // 初回受信時は名前登録（冪等性あり）
         // 例: "/sensor/temp/12345" → "/sensor/temp" を登録
-        cefore_->registerName(data.content_name);
+        cefore_->registerName(NameMapper::addScheme(data.content_name).c_str());
 
         // CEFOREに公開（cefpyco方式: sendData）
         int payload_len = strlen(data.content);
