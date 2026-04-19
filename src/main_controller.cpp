@@ -6,6 +6,7 @@
 #include <cstring>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 // ESP-NOWプロトコル用のCommunicationData構造体
 struct __attribute__((packed)) CommunicationData {
@@ -77,7 +78,16 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
     // UART受信開始
     uart_->start();
 
-    // std::cout << "[INFO] Gateway initialized successfully" << std::endl;
+    // 計測CSV初期化
+    timing_csv_.open("latency_log.csv", std::ios::out | std::ios::app);
+    if (timing_csv_.is_open()) {
+        // ファイルが空の場合のみヘッダを書く
+        timing_csv_.seekp(0, std::ios::end);
+        if (timing_csv_.tellp() == 0) {
+            timing_csv_ << "unix_time_us,content_name,chunk_num,latency_us\n";
+        }
+    }
+
     return true;
 }
 
@@ -125,8 +135,6 @@ void MainController::run() {
 }
 
 void MainController::shutdown() {
-    // std::cout << "[INFO] Shutting down gateway..." << std::endl;
-
     if (uart_) {
         uart_->stop();
     }
@@ -134,6 +142,26 @@ void MainController::shutdown() {
     if (cefore_) {
         cefore_->close();
     }
+
+    if (timing_csv_.is_open()) {
+        timing_csv_.close();
+    }
+}
+
+void MainController::writeLatencyRecord(const std::string& content_name,
+                                        uint32_t chunk_num,
+                                        int64_t latency_us) {
+    if (!timing_csv_.is_open()) return;
+
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    int64_t unix_us = static_cast<int64_t>(tv.tv_sec) * 1000000LL + tv.tv_usec;
+
+    timing_csv_ << unix_us << ","
+                << content_name << ","
+                << chunk_num << ","
+                << latency_us << "\n";
+    timing_csv_.flush();
 }
 
 bool MainController::forwardToICSN(const std::string& content_name) {
@@ -253,22 +281,35 @@ void MainController::onRxPacket(const RxPacket& packet) {
 
         // 対応するチャンク1つ分だけCEFOREへ公開
         // end_chunk_num = chunk_to_serve とすることで「このチャンクが唯一のチャンク」と宣言済み
+
+        // 計測: PITエントリが存在する場合のみ開始時刻を取得（CS経由の応答は除外済み）
+        auto timing_key = std::make_pair(std::string(data.content_name), chunk_to_serve);
+        auto t_it = interest_times_.find(timing_key);
+        bool has_timing = (t_it != interest_times_.end());
+        auto t_start = has_timing ? t_it->second : std::chrono::steady_clock::time_point{};
+        if (has_timing) interest_times_.erase(t_it);
+
         int payload_len = strlen(data.content);
         if (cefore_->sendData(cefore_uri.c_str(),
                               chunk_to_serve,
                               (const uint8_t*)data.content,
                               payload_len)) {
-            // std::cout << "[INFO] Published to CEFORE: " << cefore_uri
-            //           << " (chunk=" << chunk_to_serve << ")" << std::endl;
-        } else {
-            // std::cerr << "[ERROR] Failed to publish to CEFORE (chunk=" << chunk_to_serve << ")" << std::endl;
+            if (has_timing) {
+                auto latency_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - t_start).count();
+                writeLatencyRecord(data.content_name, chunk_to_serve, latency_us);
+            }
         }
 
         // PITキューに残りチャンクがある場合は次のICSN Interestを転送する
         // （キューが空になるまで1応答ごとに1クエリを順次送信）
         if (has_pit_entry && !pit_it->second.pending_chunks.empty()) {
+            uint32_t next_chunk = pit_it->second.pending_chunks.front();
+            auto now_fwd = std::chrono::steady_clock::now();
             if (forwardToICSN(data.content_name)) {
-                pit_it->second.time = std::chrono::steady_clock::now();
+                pit_it->second.time = now_fwd;
+                // 計測開始: 次チャンクのICSN転送時刻を記録
+                interest_times_[{std::string(data.content_name), next_chunk}] = now_fwd;
             }
         } else if (has_pit_entry) {
             pit_.erase(pit_it);
@@ -330,5 +371,7 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
         auto& entry = pit_[content_name];
         entry.time = now;
         entry.pending_chunks.push(chunk_num);
+        // 計測開始: CSヒット以外でICSNに転送した時刻を記録
+        interest_times_[{content_name, chunk_num}] = now;
     }
 }
