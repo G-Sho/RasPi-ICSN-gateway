@@ -132,6 +132,37 @@ class CEFOReMeasurement:
             except Exception as e:
                 print(f"    [WARN] flush_node_caches to {node_name} ({port}) failed: {e}")
 
+    def clear_esp32_cache(self, node_names):
+        """ESP32ノードのキャッシュをクリア"""
+        print("  → Clearing ESP32 cache...")
+        for node_name in node_names:
+            if node_name not in self.serial_ports:
+                continue
+            port = self.serial_ports[node_name]
+            print(f"    [{node_name}]", end=" ", flush=True)
+            try:
+                echo_proc = subprocess.Popen(
+                    ["echo", "clear_cache"],
+                    stdout=subprocess.PIPE
+                )
+                picocom_proc = subprocess.Popen(
+                    ["timeout", "2", "picocom", "-b", "115200", port],
+                    stdin=echo_proc.stdout,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                echo_proc.stdout.close()
+                stdout, _ = picocom_proc.communicate()
+                result_stdout = stdout.decode("utf-8", errors="replace")
+
+                if "cleared" in result_stdout.lower() or "ok" in result_stdout.lower():
+                    print("✓")
+                else:
+                    print("⚠ (unclear response)")
+            except Exception as e:
+                print(f"✗ ({e})")
+            time.sleep(0.3)
+
     def collect_sensor_data(self, node_name):
         """指定ノードからメモリバッファを取得"""
 
@@ -166,7 +197,8 @@ class CEFOReMeasurement:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    def measure_pattern(self, content_path, hop_label, num_iterations=50, sensor_nodes=None, intermediate_nodes=None):
+    def measure_pattern(self, content_path, hop_label, num_iterations=50, sensor_nodes=None, intermediate_nodes=None,
+                        cache_clear_nodes=None):
         """パターン1回分を測定"""
 
         if sensor_nodes is None:
@@ -177,6 +209,10 @@ class CEFOReMeasurement:
         print(f"\n[MEASURE] {hop_label}: {num_iterations} iterations")
         print(f"  readsensor nodes:    {sensor_nodes}")
         print(f"  intermediate nodes:  {intermediate_nodes}")
+
+        # キャッシュクリア（2hop/3hop時）
+        if cache_clear_nodes:
+            self.clear_esp32_cache(cache_clear_nodes)
 
         # 全ノードのメモリバッファをリセット
         self.reset_all_buffers()
@@ -313,7 +349,8 @@ class CEFOReMeasurement:
             "1hop",
             num_iterations,
             sensor_nodes=HOP_SENSOR_NODES["1hop"],
-            intermediate_nodes=HOP_INTERMEDIATE_NODES["1hop"]
+            intermediate_nodes=HOP_INTERMEDIATE_NODES["1hop"],
+            cache_clear_nodes=None
         )
 
         time.sleep(2)
@@ -324,7 +361,8 @@ class CEFOReMeasurement:
             "2hop",
             num_iterations,
             sensor_nodes=HOP_SENSOR_NODES["2hop"],
-            intermediate_nodes=HOP_INTERMEDIATE_NODES["2hop"]
+            intermediate_nodes=HOP_INTERMEDIATE_NODES["2hop"],
+            cache_clear_nodes=["sensor_a"]
         )
 
         time.sleep(2)
@@ -335,7 +373,8 @@ class CEFOReMeasurement:
             "3hop",
             num_iterations,
             sensor_nodes=HOP_SENSOR_NODES["3hop"],
-            intermediate_nodes=HOP_INTERMEDIATE_NODES["3hop"]
+            intermediate_nodes=HOP_INTERMEDIATE_NODES["3hop"],
+            cache_clear_nodes=["sensor_a", "sensor_b"]
         )
 
         # 結果保存
