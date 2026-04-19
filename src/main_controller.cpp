@@ -31,7 +31,6 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
     uart_ = std::make_unique<UARTReceiver>(uart_device, baudrate);
     parser_ = std::make_unique<PacketParser>();
     cefore_ = std::make_unique<CeforeInterface>();
-    name_mapper_ = std::make_unique<NameMapper>();
     fib_ = std::make_unique<GatewayFIB>();
 
     // 設定ファイルから初期 FIB エントリを読み込む（静的ルート）
@@ -137,6 +136,44 @@ void MainController::shutdown() {
     }
 }
 
+bool MainController::forwardToICSN(const std::string& content_name) {
+    // FIB検索（最長プレフィックス一致）
+    std::set<std::string> macs = fib_->lookup(content_name);
+
+    if (macs.empty()) {
+        std::cout << "[WARN] No FIB entry found for: " << content_name << std::endl;
+        std::cout << "[INFO] Broadcasting Interest to all nodes" << std::endl;
+        // FIBエントリがない場合はブロードキャスト
+        macs.insert("FF:FF:FF:FF:FF:FF");
+    }
+
+    // ICSN Interestパケット作成
+    CommunicationData interest_packet;
+    memset(&interest_packet, 0, sizeof(interest_packet));
+
+    strncpy(interest_packet.signalCode, "INTEREST", 9);
+    interest_packet.hopCount = 1;
+    strncpy(interest_packet.contentName, content_name.c_str(), 99);
+    strncpy(interest_packet.content, "N/A", 19);
+
+    // バイナリにシリアライズ
+    std::vector<uint8_t> binary_data(sizeof(CommunicationData));
+    memcpy(binary_data.data(), &interest_packet, sizeof(CommunicationData));
+
+    // 各MACアドレスにInterest転送
+    bool forwarded = false;
+    for (const auto& mac : macs) {
+        if (uart_->sendTxCommand(mac, binary_data)) {
+            std::cout << "[INFO] Forwarded Interest to " << mac << ": " << content_name << std::endl;
+            forwarded = true;
+        } else {
+            std::cerr << "[ERROR] Failed to forward Interest to " << mac << std::endl;
+        }
+    }
+
+    return forwarded;
+}
+
 void MainController::loadFIBConfig(const std::string& fib_config_path) {
     std::ifstream file(fib_config_path);
     if (!file.is_open()) {
@@ -183,38 +220,52 @@ void MainController::onRxPacket(const RxPacket& packet) {
         // FIBエントリ学習（content_name → MAC）
         fib_->save(data.content_name, {packet.sender_mac});
 
-        // PITエントリから待機中チャンク番号を取得して削除
-        std::set<uint32_t> pending_chunks;
-        auto pit_it = pit_.find(data.content_name);
-        if (pit_it != pit_.end()) {
-            pending_chunks = pit_it->second.pending_chunks;
-            pit_.erase(pit_it);
-        }
-
-        // コンテンツ名にタイムスタンプ付加
-        std::string timestamped_uri = name_mapper_->addTimestamp(data.content_name);
+        // コンテンツ名にccnx:/スキームを付加
+        std::string cefore_uri = NameMapper::addScheme(data.content_name);
 
         // 初回受信時は名前登録（冪等性あり）
-        cefore_->registerName(NameMapper::addScheme(data.content_name).c_str());
+        cefore_->registerName(cefore_uri.c_str());
 
-        // 待機中の全チャンク番号に対してCEFOREへ公開
-        int payload_len = strlen(data.content);
-        if (pending_chunks.empty()) {
+        // PITキューの先頭チャンク番号を取得して1つのみ公開する
+        // ICSNは1回のInterestに1つの値を返すため、ICSN応答1つ = CEFOREチャンク1つ に対応させる
+        auto pit_it = pit_.find(data.content_name);
+        uint32_t chunk_to_serve = 0;
+        bool has_pit_entry = (pit_it != pit_.end());
+
+        if (has_pit_entry && !pit_it->second.pending_chunks.empty()) {
+            chunk_to_serve = pit_it->second.pending_chunks.front();
+            pit_it->second.pending_chunks.pop();
+        } else if (!has_pit_entry) {
             // PITエントリが存在しない場合はチャンク番号0でフォールバック
             std::cerr << "[WARN] DATA received without matching PIT entry for: "
                       << data.content_name << " — falling back to chunk 0" << std::endl;
-            pending_chunks.insert(0);
+        } else {
+            // PITエントリは存在するがキューが空の場合（予期しない状態）はチャンク番号0でフォールバック
+            std::cerr << "[WARN] PIT entry exists but chunk queue is empty for: "
+                      << data.content_name << " — falling back to chunk 0" << std::endl;
         }
-        for (uint32_t chunk : pending_chunks) {
-            if (cefore_->sendData(timestamped_uri.c_str(),
-                                  chunk,
-                                  (const uint8_t*)data.content,
-                                  payload_len)) {
-                std::cout << "[INFO] Published to CEFORE: " << timestamped_uri
-                          << " (chunk=" << chunk << ")" << std::endl;
-            } else {
-                std::cerr << "[ERROR] Failed to publish to CEFORE (chunk=" << chunk << ")" << std::endl;
+
+        // 対応するチャンク1つ分だけCEFOREへ公開
+        // end_chunk_num = chunk_to_serve とすることで「このチャンクが唯一のチャンク」と宣言済み
+        int payload_len = strlen(data.content);
+        if (cefore_->sendData(cefore_uri.c_str(),
+                              chunk_to_serve,
+                              (const uint8_t*)data.content,
+                              payload_len)) {
+            std::cout << "[INFO] Published to CEFORE: " << cefore_uri
+                      << " (chunk=" << chunk_to_serve << ")" << std::endl;
+        } else {
+            std::cerr << "[ERROR] Failed to publish to CEFORE (chunk=" << chunk_to_serve << ")" << std::endl;
+        }
+
+        // PITキューに残りチャンクがある場合は次のICSN Interestを転送する
+        // （キューが空になるまで1応答ごとに1クエリを順次送信）
+        if (has_pit_entry && !pit_it->second.pending_chunks.empty()) {
+            if (forwardToICSN(data.content_name)) {
+                pit_it->second.time = std::chrono::steady_clock::now();
             }
+        } else if (has_pit_entry) {
+            pit_.erase(pit_it);
         }
     }
 }
@@ -222,11 +273,12 @@ void MainController::onRxPacket(const RxPacket& packet) {
 void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
     std::cout << "[INFO] Received Interest: " << uri << " (chunk=" << chunk_num << ")" << std::endl;
 
-    // タイムスタンプを除去してICSNコンテンツ名取得
-    std::string content_name = name_mapper_->removeTimestamp(uri);
+    // スキームを除去し、CEFOREが付加したTLVコンポーネントを取り除いてICSNコンテンツ名取得
+    std::string content_name = NameMapper::stripCeforeComponents(NameMapper::removeScheme(uri));
 
     // PIT重複チェック: 同一コンテンツ名のInterestが既に転送済みであれば
-    // チャンク番号を集約して抑制
+    // チャンク番号をキューに追加して抑制（ICSNへの追加転送は行わない）
+    // ICSN応答が返ってきた際にキューから順番に取り出してICSNへ再転送する
     auto now = std::chrono::steady_clock::now();
     auto it = pit_.find(content_name);
     if (it != pit_.end()) {
@@ -240,8 +292,8 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
                           << " — discarding chunk " << chunk_num << std::endl;
                 return;
             }
-            it->second.pending_chunks.insert(chunk_num);
-            std::cout << "[INFO] Aggregating chunk " << chunk_num << " into pending Interest for: "
+            it->second.pending_chunks.push(chunk_num);
+            std::cout << "[INFO] Queuing chunk " << chunk_num << " for pending Interest: "
                       << content_name << " (" << it->second.pending_chunks.size()
                       << " chunks pending)" << std::endl;
             return;
@@ -250,42 +302,10 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
         pit_.erase(it);
     }
 
-    // FIB検索（最長プレフィックス一致）
-    std::set<std::string> macs = fib_->lookup(content_name);
-
-    if (macs.empty()) {
-        std::cout << "[WARN] No FIB entry found for: " << content_name << std::endl;
-        std::cout << "[INFO] Broadcasting Interest to all nodes" << std::endl;
-        // FIBエントリがない場合はブロードキャスト
-        macs.insert("FF:FF:FF:FF:FF:FF");
-    }
-
-    // ICSN Interestパケット作成
-    CommunicationData interest_packet;
-    memset(&interest_packet, 0, sizeof(interest_packet));
-
-    strncpy(interest_packet.signalCode, "INTEREST", 9);
-    interest_packet.hopCount = 1;
-    strncpy(interest_packet.contentName, content_name.c_str(), 99);
-    strncpy(interest_packet.content, "N/A", 19);
-
-    // バイナリにシリアライズ
-    std::vector<uint8_t> binary_data(sizeof(CommunicationData));
-    memcpy(binary_data.data(), &interest_packet, sizeof(CommunicationData));
-
-    // 各MACアドレスにInterest転送（少なくとも1つ成功した場合にPIT登録）
-    bool forwarded = false;
-    for (const auto& mac : macs) {
-        if (uart_->sendTxCommand(mac, binary_data)) {
-            std::cout << "[INFO] Forwarded Interest to " << mac << ": " << content_name << std::endl;
-            forwarded = true;
-        } else {
-            std::cerr << "[ERROR] Failed to forward Interest to " << mac << std::endl;
-        }
-    }
-
-    // 転送成功時のみPITに登録（重複抑制・チャンク集約用）
-    if (forwarded) {
-        pit_[content_name] = {now, {chunk_num}};
+    // ICSNへInterest転送（転送成功時のみPITに登録）
+    if (forwardToICSN(content_name)) {
+        auto& entry = pit_[content_name];
+        entry.time = now;
+        entry.pending_chunks.push(chunk_num);
     }
 }

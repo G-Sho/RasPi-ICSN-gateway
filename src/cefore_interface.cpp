@@ -96,8 +96,12 @@ bool CeforeInterface::sendData(const char* uri,
     params.payload_len = payload_len;
 
     // チャンク番号設定
+    // ICSNセンサーはチャンクを実装していないため、各チャンクを独立した1つのコンテンツとして扱う
+    // end_chunk_num = chunk_num とすることで「このチャンクが最初かつ最後」と宣言する
     params.chunk_num_f = 1;
     params.chunk_num = chunk_num;
+    params.end_chunk_num_f = 1;
+    params.end_chunk_num = chunk_num;
 
     // 有効期限設定
     uint64_t now_ms = getCurrentTimeMs();

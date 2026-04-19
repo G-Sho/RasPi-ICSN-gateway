@@ -1,6 +1,4 @@
 #include "name_mapper.h"
-#include <chrono>
-#include <sstream>
 
 static const std::string kScheme = "ccnx:";
 
@@ -25,41 +23,20 @@ std::string NameMapper::removeScheme(const std::string& name) {
     return result;
 }
 
-uint64_t NameMapper::getCurrentTimeMs() {
-    auto now = std::chrono::system_clock::now();
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now.time_since_epoch());
-    return ms.count();
-}
-
-std::string NameMapper::addTimestamp(const std::string& icsn_content_name) {
-    // スキームなしの正規パスに正規化
-    std::string name = removeScheme(icsn_content_name);
-
-    // '/' で始まることを保証
-    if (name.empty() || name[0] != '/') {
-        name = "/" + name;
+std::string NameMapper::stripCeforeComponents(const std::string& name) {
+    std::string result = name;
+    // CEFOREが付加したTLV形式コンポーネント（例: /0x0004=0x00000000）を末尾から除去する
+    while (true) {
+        size_t last_slash = result.rfind('/');
+        if (last_slash == std::string::npos || last_slash == 0) {
+            break;
+        }
+        std::string segment = result.substr(last_slash + 1);
+        if (segment.compare(0, 2, "0x") == 0 || segment.compare(0, 2, "0X") == 0) {
+            result = result.substr(0, last_slash);
+        } else {
+            break;
+        }
     }
-
-    // 末尾の '/' を除去
-    if (name.length() > 1 && name.back() == '/') {
-        name.pop_back();
-    }
-
-    uint64_t timestamp = getCurrentTimeMs();
-    std::ostringstream oss;
-    oss << name << "/" << timestamp;
-
-    // ccnx:/ スキーム付きで返す（CEFORE API が要求するフォーマット）
-    return addScheme(oss.str());
-}
-
-std::string NameMapper::removeTimestamp(const std::string& timestamped_name) {
-    size_t last_slash = timestamped_name.rfind('/');
-
-    if (last_slash == std::string::npos || last_slash == 0) {
-        return timestamped_name;
-    }
-
-    return removeScheme(timestamped_name.substr(0, last_slash));
+    return result;
 }

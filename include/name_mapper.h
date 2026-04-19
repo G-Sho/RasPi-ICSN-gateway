@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <cstdint>
 
 class NameMapper {
 public:
@@ -11,12 +10,6 @@ public:
     // ccnx:/ スキームを除去（あれば）
     static std::string removeScheme(const std::string& name);
 
-    // ICSNコンテンツ名にタイムスタンプを付加（ccnx:/ スキーム付きで返す）
-    std::string addTimestamp(const std::string& icsn_content_name);
-
-    // タイムスタンプ付き名前からICSNコンテンツ名を抽出（スキームなし）
-    std::string removeTimestamp(const std::string& timestamped_name);
-
-private:
-    uint64_t getCurrentTimeMs();
+    // CEFOREが付加したTLV形式のコンポーネント（"0x"で始まるパスセグメント）を末尾から除去
+    static std::string stripCeforeComponents(const std::string& name);
 };
