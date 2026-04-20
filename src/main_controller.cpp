@@ -80,11 +80,18 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
 
     // 計測CSV初期化
     timing_csv_.open("latency_log.csv", std::ios::out | std::ios::app);
-    if (timing_csv_.is_open()) {
+    if (!timing_csv_.is_open()) {
+        std::cerr << "failed to open latency_log.csv" << std::endl;
+    } else {
+        char cwd[512];
+        if (getcwd(cwd, sizeof(cwd))) {
+            std::cerr << "[debug] latency_log.csv opened at: " << cwd << "/latency_log.csv" << std::endl;
+        }
         // ファイルが空の場合のみヘッダを書く
         timing_csv_.seekp(0, std::ios::end);
         if (timing_csv_.tellp() == 0) {
             timing_csv_ << "unix_time_us,content_name,chunk_num,latency_us\n";
+            timing_csv_.flush();
         }
     }
 
@@ -151,6 +158,7 @@ void MainController::shutdown() {
 void MainController::writeLatencyRecord(const std::string& content_name,
                                         uint32_t chunk_num,
                                         int64_t latency_us) {
+    std::cerr << "[debug] writeLatencyRecord called: " << content_name << " chunk=" << chunk_num << " latency=" << latency_us << "us" << std::endl;
     if (!timing_csv_.is_open()) return;
 
     struct timeval tv;
