@@ -26,7 +26,7 @@ MainController::~MainController() {
 
 bool MainController::initialize(const std::string& uart_device, int baudrate,
                                 const std::string& fib_config_path) {
-    // std::cout << "[INFO] Creating components..." << std::endl;
+    std::cout << "[INFO] Creating components..." << std::endl;
 
     // コンポーネント作成
     uart_ = std::make_unique<UARTReceiver>(uart_device, baudrate);
@@ -41,9 +41,9 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
 
     // CEFORE初期化（cefpyco方式: init()でconnectまで完了）
     // cefpycoのテストと同様に、空文字列を渡す (test_cefpyco.c:38)
-    // std::cout << "[INFO] Initializing CEFORE..." << std::endl;
+    std::cout << "[INFO] Initializing CEFORE..." << std::endl;
     if (!cefore_->init(0, "")) {
-        // std::cerr << "[ERROR] CEFORE initialization failed" << std::endl;
+        std::cerr << "[ERROR] CEFORE initialization failed" << std::endl;
         return false;
     }
 
@@ -58,7 +58,7 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
 
     // プレフィックス登録（全センサーデータのルート）
     // ICSN側で使う名前空間を登録
-    // std::cout << "[INFO] Registering CEFORE prefixes..." << std::endl;
+    std::cout << "[INFO] Registering CEFORE prefixes..." << std::endl;
 
     // ICSNセンサーのルートプレフィックスを登録
     // 実際のセンサー名に応じて変更
@@ -69,9 +69,9 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
 
     for (int i = 0; prefixes[i] != nullptr; i++) {
         if (cefore_->registerName(prefixes[i])) {
-            // std::cout << "[INFO] Registered prefix: " << prefixes[i] << std::endl;
+            std::cout << "[INFO] Registered prefix: " << prefixes[i] << std::endl;
         } else {
-            // std::cerr << "[ERROR] Failed to register prefix: " << prefixes[i] << std::endl;
+            std::cerr << "[ERROR] Failed to register prefix: " << prefixes[i] << std::endl;
         }
     }
 
@@ -81,12 +81,8 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
     // 計測CSV初期化
     timing_csv_.open("latency_log.csv", std::ios::out | std::ios::app);
     if (!timing_csv_.is_open()) {
-        std::cerr << "failed to open latency_log.csv" << std::endl;
+        std::cerr << "[ERROR] failed to open latency_log.csv" << std::endl;
     } else {
-        char cwd[512];
-        if (getcwd(cwd, sizeof(cwd))) {
-            std::cerr << "[debug] latency_log.csv opened at: " << cwd << "/latency_log.csv" << std::endl;
-        }
         // ファイルが空の場合のみヘッダを書く
         timing_csv_.seekp(0, std::ios::end);
         if (timing_csv_.tellp() == 0) {
@@ -134,7 +130,7 @@ void MainController::run() {
                 }
             }
         } else if (len < 0) {
-            // std::cerr << "[ERROR] Receive error: " << len << std::endl;
+            std::cerr << "[ERROR] Receive error: " << len << std::endl;
             break;
         }
         // len == 0 はタイムアウト、ループ継続
@@ -158,7 +154,6 @@ void MainController::shutdown() {
 void MainController::writeLatencyRecord(const std::string& content_name,
                                         uint32_t chunk_num,
                                         int64_t latency_us) {
-    std::cerr << "[debug] writeLatencyRecord called: " << content_name << " chunk=" << chunk_num << " latency=" << latency_us << "us" << std::endl;
     if (!timing_csv_.is_open()) return;
 
     struct timeval tv;
@@ -203,7 +198,7 @@ bool MainController::forwardToICSN(const std::string& content_name) {
             // std::cout << "[INFO] Forwarded Interest to " << mac << ": " << content_name << std::endl;
             forwarded = true;
         } else {
-            // std::cerr << "[ERROR] Failed to forward Interest to " << mac << std::endl;
+            std::cerr << "[ERROR] Failed to forward Interest to " << mac << std::endl;
         }
     }
 
@@ -213,7 +208,7 @@ bool MainController::forwardToICSN(const std::string& content_name) {
 void MainController::loadFIBConfig(const std::string& fib_config_path) {
     std::ifstream file(fib_config_path);
     if (!file.is_open()) {
-        // std::cerr << "[WARN] Failed to open FIB config file: " << fib_config_path << std::endl;
+        std::cerr << "[WARN] Failed to open FIB config file: " << fib_config_path << std::endl;
         return;
     }
 
@@ -229,7 +224,7 @@ void MainController::loadFIBConfig(const std::string& fib_config_path) {
         std::istringstream iss(line);
         std::string prefix, mac;
         if (!(iss >> prefix >> mac)) {
-            // std::cerr << "[WARN] Skipping invalid FIB config line: " << line << std::endl;
+            std::cerr << "[WARN] Skipping invalid FIB config line: " << line << std::endl;
             continue;
         }
 
@@ -244,7 +239,7 @@ void MainController::onRxPacket(const RxPacket& packet) {
     PacketParser::SensorData data;
 
     if (!parser_->parse(packet.payload, data)) {
-        // std::cerr << "[ERROR] Failed to parse packet from " << packet.sender_mac << std::endl;
+        std::cerr << "[ERROR] Failed to parse packet from " << packet.sender_mac << std::endl;
         return;
     }
 
@@ -279,12 +274,12 @@ void MainController::onRxPacket(const RxPacket& packet) {
             pit_it->second.pending_chunks.pop();
         } else if (!has_pit_entry) {
             // PITエントリが存在しない場合はチャンク番号0でフォールバック
-            // std::cerr << "[WARN] DATA received without matching PIT entry for: "
-            //           << data.content_name << " — falling back to chunk 0" << std::endl;
+            std::cerr << "[WARN] DATA received without matching PIT entry for: "
+                      << data.content_name << " — falling back to chunk 0" << std::endl;
         } else {
             // PITエントリは存在するがキューが空の場合（予期しない状態）はチャンク番号0でフォールバック
-            // std::cerr << "[WARN] PIT entry exists but chunk queue is empty for: "
-            //           << data.content_name << " — falling back to chunk 0" << std::endl;
+            std::cerr << "[WARN] PIT entry exists but chunk queue is empty for: "
+                      << data.content_name << " — falling back to chunk 0" << std::endl;
         }
 
         // 対応するチャンク1つ分だけCEFOREへ公開
@@ -343,8 +338,8 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
             // チャンク数が多すぎる場合はログ警告（チャンク番号は追加しない）
             static constexpr size_t MAX_PENDING_CHUNKS = 256;
             if (it->second.pending_chunks.size() >= MAX_PENDING_CHUNKS) {
-                // std::cerr << "[WARN] Too many pending chunks for: " << content_name
-                //           << " — discarding chunk " << chunk_num << std::endl;
+                std::cerr << "[WARN] Too many pending chunks for: " << content_name
+                          << " — discarding chunk " << chunk_num << std::endl;
                 return;
             }
             it->second.pending_chunks.push(chunk_num);
