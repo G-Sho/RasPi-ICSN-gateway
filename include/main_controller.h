@@ -1,10 +1,12 @@
 #pragma once
 
 #include <memory>
+#include <map>
 #include <queue>
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <fstream>
 #include <chrono>
 #include "uart_receiver.h"
 #include "packet_parser.h"
@@ -35,6 +37,12 @@ private:
     std::unique_ptr<PacketParser> parser_;
     std::unique_ptr<CeforeInterface> cefore_;
     std::unique_ptr<GatewayFIB> fib_;
+
+    // 計測: Interest転送開始時刻 (コンテンツ名, チャンク番号) → 時刻
+    std::map<std::pair<std::string, uint32_t>, std::chrono::steady_clock::time_point> interest_times_;
+    std::ofstream timing_csv_;
+    void writeLatencyRecord(const std::string& content_name, uint32_t chunk_num,
+                            int64_t latency_us);
 
     // PIT: コンテンツ名ごとに最後にInterestを転送した時刻と
     //      待機中のチャンク番号キューを管理（FIFO順でICSN応答に対応させる）
