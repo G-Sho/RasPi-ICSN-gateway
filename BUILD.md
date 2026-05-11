@@ -30,14 +30,20 @@
    cd build
    ```
 
-3. CMakeで設定
+3. CMakeで設定（`BUILD_PROFILE` を指定）
    ```bash
-   cmake ..
+   # normal: INFO/WARN/DEBUG 有効、計測無効
+   cmake -DBUILD_PROFILE=normal ..
    ```
+
+   利用可能なプロファイル:
+   - `normal`: INFO/WARN/DEBUG 有効、計測無効
+   - `perf`: 最小ログ（WARN/ERROR）、計測有効
+   - `release`: 最小ログ（WARN/ERROR）、計測無効
 
 4. ビルド
    ```bash
-   make
+   cmake --build .
    ```
 
 5. インストール（オプション）

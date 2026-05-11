@@ -45,7 +45,7 @@ ESP32 ブリッジ <--UART--> Raspberry Pi ゲートウェイ <--CEFORE API--> c
 ```bash
 # ビルド
 mkdir build && cd build
-cmake ..
+cmake -DBUILD_PROFILE=normal ..
 make
 
 # 起動（cefnetd が稼働していること）
@@ -102,7 +102,35 @@ struct __attribute__((packed)) CommunicationData {
 3. `GatewayFIB` が最長プレフィックス一致で MAC アドレスを検索
 4. `UARTReceiver` が UART 経由で ESP32 へ Interest を転送
 
-## テストトポロジーとブランチ方針
+## ビルドプロファイル
+
+本プロジェクトは `BUILD_PROFILE` で以下 3 種類のビルドを提供します。
+
+| プロファイル | 指定方法 | ログ出力 | パフォーマンス計測 |
+|---|---|---|---|
+| normal | `-DBUILD_PROFILE=normal` | INFO/WARN/DEBUG | 無効 |
+| perf | `-DBUILD_PROFILE=perf` | 最小（WARN/ERROR） | 有効 |
+| release | `-DBUILD_PROFILE=release` | 最小（WARN/ERROR） | 無効 |
+
+```bash
+mkdir build && cd build
+
+# normal
+cmake -DBUILD_PROFILE=normal ..
+cmake --build .
+
+# perf
+cmake -DBUILD_PROFILE=perf ..
+cmake --build .
+
+# release
+cmake -DBUILD_PROFILE=release ..
+cmake --build .
+```
+
+`perf` プロファイルでのみ `latency_log.csv` への計測記録が有効になります。
+
+## テストトポロジー
 
 ### テスト経路
 
@@ -126,16 +154,16 @@ RasPi gateway --UART--> bridge --ESP-NOW--> sensor(A) --ESP-NOW--> sensor(B) --E
 | ノード     | 決定する次ホップ          | 設定箇所                                      |
 |------------|--------------------------|-----------------------------------------------|
 | **gateway**  | 次ホップ = bridge        | `config/test_fib.conf`（本リポジトリ）         |
-| **bridge**   | 次ホップ = sensor(A)     | `ESP32-ICSN-bridge` リポジトリのテストブランチ |
-| **sensor(A)**| 次ホップ = sensor(B)     | `ESP32-ICSN-sensor-node` テストブランチ        |
-| **sensor(B)**| 次ホップ = sensor(C)     | `ESP32-ICSN-sensor-node` テストブランチ        |
-| **sensor(C)**| 末端（データ発信源）      | `ESP32-ICSN-sensor-node` テストブランチ        |
+| **bridge**   | 次ホップ = sensor(A)     | `ESP32-ICSN-bridge` 側設定 |
+| **sensor(A)**| 次ホップ = sensor(B)     | `ESP32-ICSN-sensor-node` 側設定 |
+| **sensor(B)**| 次ホップ = sensor(C)     | `ESP32-ICSN-sensor-node` 側設定 |
+| **sensor(C)**| 末端（データ発信源）      | `ESP32-ICSN-sensor-node` 側設定 |
 
 > **ポイント**: gateway は bridge の MAC アドレスしか直接知らない。  
 > センサー A/B/C への Interest は、`/icsn` プレフィックスの最長一致で bridge 宛に転送される。  
 > bridge 以降の転送（bridge→A, A→B, B→C）は各ノードが自身の FIB で解決する。
 
-### テスト用ブランチの初期 FIB 設定（gateway）
+### 初期 FIB 設定（gateway）
 
 `config/test_fib.conf` に静的 FIB エントリが記述されています。  
 このファイルを起動時の第 3 引数に渡すことで初期 FIB を投入できます。
