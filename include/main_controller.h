@@ -42,9 +42,10 @@ private:
 #ifdef ENABLE_PERF_MEASUREMENT
     std::map<std::pair<std::string, uint32_t>, std::chrono::steady_clock::time_point> interest_times_;
     std::ofstream timing_csv_;
-#endif
-    void writeLatencyRecord(const std::string& content_name, uint32_t chunk_num,
+    void writeLatencyRecord(const std::string& content_name,
+                            uint32_t chunk_num,
                             int64_t latency_us);
+#endif
 
     // PIT: コンテンツ名ごとに最後にInterestを転送した時刻と
     //      待機中のチャンク番号キューを管理（FIFO順でICSN応答に対応させる）

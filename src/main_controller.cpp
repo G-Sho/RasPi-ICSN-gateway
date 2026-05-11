@@ -156,10 +156,10 @@ void MainController::shutdown() {
 #endif
 }
 
+#ifdef ENABLE_PERF_MEASUREMENT
 void MainController::writeLatencyRecord(const std::string& content_name,
                                         uint32_t chunk_num,
                                         int64_t latency_us) {
-#ifdef ENABLE_PERF_MEASUREMENT
     if (!timing_csv_.is_open()) return;
 
     struct timeval tv;
@@ -171,12 +171,8 @@ void MainController::writeLatencyRecord(const std::string& content_name,
                 << chunk_num << ","
                 << latency_us << "\n";
     timing_csv_.flush();
-#else
-    (void)content_name;
-    (void)chunk_num;
-    (void)latency_us;
-#endif
 }
+#endif
 
 bool MainController::forwardToICSN(const std::string& content_name) {
     // FIB検索（最長プレフィックス一致）
@@ -297,11 +293,10 @@ void MainController::onRxPacket(const RxPacket& packet) {
         // end_chunk_num = chunk_to_serve とすることで「このチャンクが唯一のチャンク」と宣言済み
 
         // 計測: PITエントリが存在する場合のみ開始時刻を取得（CS経由の応答は除外済み）
-        bool has_timing = false;
 #ifdef ENABLE_PERF_MEASUREMENT
         auto timing_key = std::make_pair(std::string(data.content_name), chunk_to_serve);
         auto t_it = interest_times_.find(timing_key);
-        has_timing = (t_it != interest_times_.end());
+        bool has_timing = (t_it != interest_times_.end());
         auto t_start = has_timing ? t_it->second : std::chrono::steady_clock::time_point{};
         if (has_timing) interest_times_.erase(t_it);
 #endif
@@ -311,13 +306,13 @@ void MainController::onRxPacket(const RxPacket& packet) {
                               chunk_to_serve,
                               (const uint8_t*)data.content,
                               payload_len)) {
-            if (has_timing) {
 #ifdef ENABLE_PERF_MEASUREMENT
+            if (has_timing) {
                 auto latency_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now() - t_start).count();
                 writeLatencyRecord(data.content_name, chunk_to_serve, latency_us);
-#endif
             }
+#endif
         }
 
         // PITキューに残りチャンクがある場合は次のICSN Interestを転送する

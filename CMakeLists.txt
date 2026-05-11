@@ -4,6 +4,7 @@ project(raspi-cefore-gateway)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# デフォルトは normal: 開発時の可観測性（INFO/WARN/DEBUG）を優先
 set(BUILD_PROFILE "normal" CACHE STRING "Build profile (normal|perf|release)")
 set_property(CACHE BUILD_PROFILE PROPERTY STRINGS normal perf release)
 
