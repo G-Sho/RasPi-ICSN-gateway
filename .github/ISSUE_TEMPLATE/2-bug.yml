@@ -1,0 +1,114 @@
+name: "不具合報告"
+description: "Raspberry Pi - ICSN ゲートウェイの不具合や予期しない動作を報告する場合に使用します。"
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 影響度
+      options:
+        - critical (起動不能 / 通信停止)
+        - high (主要フローが大きく劣化)
+        - medium (回避策あり)
+        - low (軽微)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 発生領域
+      options:
+        - UART（/dev/serial0 など）
+        - パケット解析（Base64 / ICSN構造体）
+        - CEFORE連携（cefnetd / API）
+        - FIBルーティング（最長プレフィックス一致）
+        - NameMapper（タイムスタンプ処理）
+        - build / CI / その他
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: 発生している事象を簡潔に記述してください
+      placeholder: |
+        例）Interest 受信後に UART 送信が失敗し、CEFORE 側でタイムアウトする
+    validations:
+      required: true
+
+  - type: input
+    id: target-platform
+    attributes:
+      label: 発生環境
+      description: 例: Raspberry Pi OS / GCC / CMake
+      placeholder: "例）Raspberry Pi OS Bookworm / GCC 12 / CMake 3.25"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 再現手順
+      placeholder: |
+        1. cefnetd を起動
+        2. build/gateway /dev/serial0 115200 ../config/test_fib.conf を実行
+        3. Interest 送信後に応答が返らないことを確認
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-and-actual
+    attributes:
+      label: 期待される動作と実際の動作
+      description: 本来あるべき動作と、実際に起きている動作を記述してください（エラーメッセージやスクリーンショットも可）
+      placeholder: |
+        - 期待:
+        - 実際:
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: ログ / 出力
+      description: ゲートウェイ標準出力、シリアルログ、CIログ、エラーメッセージを貼り付けてください
+
+  - type: input
+    id: commit
+    attributes:
+      label: 対象コミット / ブランチ
+      placeholder: "例）main@abc1234 または feature/fix-uart-timeout"
+
+  - type: input
+    id: runtime-args
+    attributes:
+      label: 実行引数
+      description: gateway 起動時の引数を記載
+      placeholder: "例）/dev/serial0 115200 ../config/test_fib.conf"
+
+  - type: textarea
+    id: config-notes
+    attributes:
+      label: 設定差分メモ
+      description: 再現に必要な設定差分のみ記載してください（秘密情報は貼らない）
+      placeholder: |
+        例）
+        - FIB 設定に /icsn -> 08:D1:F9:37:39:C0 を追加
+        - UART デバイスを /dev/ttyUSB0 に変更
+
+  - type: checkboxes
+    id: pre-checks
+    attributes:
+      label: 事前確認
+      options:
+        - label: 最新 main でも再現することを確認した
+        - label: クリーンビルド（cmake .. && make）で再現を確認した
+        - label: 機密情報（鍵・トークン等）を投稿していない
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 補足情報
+      description: 関連ログ、再現頻度、回避策があれば記載してください

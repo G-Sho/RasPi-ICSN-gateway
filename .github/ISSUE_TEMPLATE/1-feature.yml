@@ -1,0 +1,99 @@
+name: "機能追加・改善"
+description: "Raspberry Pi - ICSN ゲートウェイ向けの機能追加・改善・リファクタリング提案に使用します。"
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: 対象領域
+      description: 主に変更対象となる領域を選択してください
+      options:
+        - UARTReceiver（UART入出力）
+        - PacketParser（ICSNパケット解析）
+        - CeforeInterface（CEFORE連携）
+        - NameMapper（タイムスタンプ処理）
+        - GatewayFIB（FIB/ルーティング）
+        - MainController（制御フロー）
+        - build / ci / docs
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: 実現したい内容を簡潔に記述してください
+      placeholder: |
+        例）/icsn プレフィックスの Interest 転送判定を改善し、不要な UART 転送を削減する
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: 背景と目的
+      description: いま対応が必要な理由、現状の課題、期待する効果を記述してください
+      placeholder: |
+        例）テストトポロジーで再送が増加し、UART 帯域と応答遅延に影響している
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 提案内容（実装案）
+      description: 想定する変更点を記述してください（必要なら疑似コード可）
+      placeholder: |
+        - GatewayFIB の最長プレフィックス一致ロジックを見直す
+        - MainController 側の ICSN -> CEFORE / CEFORE -> ICSN の分岐を整理する
+        - PacketParser の検証エラー時ログを強化する
+    validations:
+      required: true
+
+  - type: textarea
+    id: architecture-impact
+    attributes:
+      label: アーキテクチャ影響
+      description: 既存コンポーネント間の責務分離に対する影響を記述してください
+      placeholder: |
+        - 追加/変更するコンポーネント:
+        - 新規インターフェースの有無:
+        - 依存関係が変わる場合の理由:
+
+  - type: checkboxes
+    id: security-perf-check
+    attributes:
+      label: Security / Reliability 観点
+      options:
+        - label: HMAC / カウンタなどの検証ロジックへの影響有無を確認した
+        - label: 異常入力（不正フォーマット、サイズ超過、デコード失敗）時の挙動を確認した
+        - label: CEFORE 側連携（prefix登録、publish/interest処理）への影響を確認した
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: 受け入れ条件
+      description: 完了と判断できる条件をチェックリスト形式で記述してください
+      placeholder: |
+        - [ ] ローカルでビルドが通る
+        - [ ] 主要フロー（ICSN -> CEFORE / CEFORE -> ICSN）の動作確認を実施した
+        - [ ] 必要に応じて README / OPERATION_GUIDE を更新した
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation-plan
+    attributes:
+      label: 検証手順
+      description: 想定する確認手順を記述してください
+      placeholder: |
+        例）
+        1. mkdir build && cd build
+        2. cmake .. && make -j$(nproc)
+        3. cefnetd 起動後に gateway を実行し、ログで送受信を確認
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 補足情報
+      description: 関連 Issue/PR、参考資料、ログ、スクリーンショット等
