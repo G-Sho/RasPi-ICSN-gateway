@@ -1,4 +1,5 @@
 #include "main_controller.h"
+#include "logging.h"
 #include "third_party/base64.h"
 #include <iostream>
 #include <fstream>
@@ -26,7 +27,7 @@ MainController::~MainController() {
 
 bool MainController::initialize(const std::string& uart_device, int baudrate,
                                 const std::string& fib_config_path) {
-    std::cout << "[INFO] Creating components..." << std::endl;
+    LOG_INFO("Creating components...");
 
     // コンポーネント作成
     uart_ = std::make_unique<UARTReceiver>(uart_device, baudrate);
@@ -41,9 +42,9 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
 
     // CEFORE初期化（cefpyco方式: init()でconnectまで完了）
     // cefpycoのテストと同様に、空文字列を渡す (test_cefpyco.c:38)
-    std::cout << "[INFO] Initializing CEFORE..." << std::endl;
+    LOG_INFO("Initializing CEFORE...");
     if (!cefore_->init(0, "")) {
-        std::cerr << "[ERROR] CEFORE initialization failed" << std::endl;
+        LOG_ERROR("CEFORE initialization failed");
         return false;
     }
 
@@ -58,7 +59,7 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
 
     // プレフィックス登録（全センサーデータのルート）
     // ICSN側で使う名前空間を登録
-    std::cout << "[INFO] Registering CEFORE prefixes..." << std::endl;
+    LOG_INFO("Registering CEFORE prefixes...");
 
     // ICSNセンサーのルートプレフィックスを登録
     // 実際のセンサー名に応じて変更
@@ -69,19 +70,20 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
 
     for (int i = 0; prefixes[i] != nullptr; i++) {
         if (cefore_->registerName(prefixes[i])) {
-            std::cout << "[INFO] Registered prefix: " << prefixes[i] << std::endl;
+            LOG_INFO("Registered prefix: " << prefixes[i]);
         } else {
-            std::cerr << "[ERROR] Failed to register prefix: " << prefixes[i] << std::endl;
+            LOG_ERROR("Failed to register prefix: " << prefixes[i]);
         }
     }
 
     // UART受信開始
     uart_->start();
 
-    // 計測CSV初期化
+    // 計測CSV初期化（perfプロファイルのみ）
+#ifdef ENABLE_PERF_MEASUREMENT
     timing_csv_.open("latency_log.csv", std::ios::out | std::ios::app);
     if (!timing_csv_.is_open()) {
-        std::cerr << "[ERROR] failed to open latency_log.csv" << std::endl;
+        LOG_ERROR("failed to open latency_log.csv");
     } else {
         // ファイルが空の場合のみヘッダを書く
         timing_csv_.seekp(0, std::ios::end);
@@ -90,6 +92,7 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
             timing_csv_.flush();
         }
     }
+#endif
 
     return true;
 }
@@ -130,7 +133,7 @@ void MainController::run() {
                 }
             }
         } else if (len < 0) {
-            std::cerr << "[ERROR] Receive error: " << len << std::endl;
+            LOG_ERROR("Receive error: " << len);
             break;
         }
         // len == 0 はタイムアウト、ループ継続
@@ -146,11 +149,14 @@ void MainController::shutdown() {
         cefore_->close();
     }
 
+#ifdef ENABLE_PERF_MEASUREMENT
     if (timing_csv_.is_open()) {
         timing_csv_.close();
     }
+#endif
 }
 
+#ifdef ENABLE_PERF_MEASUREMENT
 void MainController::writeLatencyRecord(const std::string& content_name,
                                         uint32_t chunk_num,
                                         int64_t latency_us) {
@@ -166,6 +172,7 @@ void MainController::writeLatencyRecord(const std::string& content_name,
                 << latency_us << "\n";
     timing_csv_.flush();
 }
+#endif
 
 bool MainController::forwardToICSN(const std::string& content_name) {
     // FIB検索（最長プレフィックス一致）
@@ -198,7 +205,7 @@ bool MainController::forwardToICSN(const std::string& content_name) {
             // std::cout << "[INFO] Forwarded Interest to " << mac << ": " << content_name << std::endl;
             forwarded = true;
         } else {
-            std::cerr << "[ERROR] Failed to forward Interest to " << mac << std::endl;
+            LOG_ERROR("Failed to forward Interest to " << mac);
         }
     }
 
@@ -208,7 +215,7 @@ bool MainController::forwardToICSN(const std::string& content_name) {
 void MainController::loadFIBConfig(const std::string& fib_config_path) {
     std::ifstream file(fib_config_path);
     if (!file.is_open()) {
-        std::cerr << "[WARN] Failed to open FIB config file: " << fib_config_path << std::endl;
+        LOG_WARN("Failed to open FIB config file: " << fib_config_path);
         return;
     }
 
@@ -224,7 +231,7 @@ void MainController::loadFIBConfig(const std::string& fib_config_path) {
         std::istringstream iss(line);
         std::string prefix, mac;
         if (!(iss >> prefix >> mac)) {
-            std::cerr << "[WARN] Skipping invalid FIB config line: " << line << std::endl;
+            LOG_WARN("Skipping invalid FIB config line: " << line);
             continue;
         }
 
@@ -239,7 +246,7 @@ void MainController::onRxPacket(const RxPacket& packet) {
     PacketParser::SensorData data;
 
     if (!parser_->parse(packet.payload, data)) {
-        std::cerr << "[ERROR] Failed to parse packet from " << packet.sender_mac << std::endl;
+        LOG_ERROR("Failed to parse packet from " << packet.sender_mac);
         return;
     }
 
@@ -274,34 +281,38 @@ void MainController::onRxPacket(const RxPacket& packet) {
             pit_it->second.pending_chunks.pop();
         } else if (!has_pit_entry) {
             // PITエントリが存在しない場合はチャンク番号0でフォールバック
-            std::cerr << "[WARN] DATA received without matching PIT entry for: "
-                      << data.content_name << " — falling back to chunk 0" << std::endl;
+            LOG_WARN("DATA received without matching PIT entry for: "
+                     << data.content_name << " — falling back to chunk 0");
         } else {
             // PITエントリは存在するがキューが空の場合（予期しない状態）はチャンク番号0でフォールバック
-            std::cerr << "[WARN] PIT entry exists but chunk queue is empty for: "
-                      << data.content_name << " — falling back to chunk 0" << std::endl;
+            LOG_WARN("PIT entry exists but chunk queue is empty for: "
+                     << data.content_name << " — falling back to chunk 0");
         }
 
         // 対応するチャンク1つ分だけCEFOREへ公開
         // end_chunk_num = chunk_to_serve とすることで「このチャンクが唯一のチャンク」と宣言済み
 
         // 計測: PITエントリが存在する場合のみ開始時刻を取得（CS経由の応答は除外済み）
+#ifdef ENABLE_PERF_MEASUREMENT
         auto timing_key = std::make_pair(std::string(data.content_name), chunk_to_serve);
         auto t_it = interest_times_.find(timing_key);
         bool has_timing = (t_it != interest_times_.end());
         auto t_start = has_timing ? t_it->second : std::chrono::steady_clock::time_point{};
         if (has_timing) interest_times_.erase(t_it);
+#endif
 
         int payload_len = strlen(data.content);
         if (cefore_->sendData(cefore_uri.c_str(),
                               chunk_to_serve,
                               (const uint8_t*)data.content,
                               payload_len)) {
+#ifdef ENABLE_PERF_MEASUREMENT
             if (has_timing) {
                 auto latency_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now() - t_start).count();
                 writeLatencyRecord(data.content_name, chunk_to_serve, latency_us);
             }
+#endif
         }
 
         // PITキューに残りチャンクがある場合は次のICSN Interestを転送する
@@ -312,7 +323,9 @@ void MainController::onRxPacket(const RxPacket& packet) {
             if (forwardToICSN(data.content_name)) {
                 pit_it->second.time = now_fwd;
                 // 計測開始: 次チャンクのICSN転送時刻を記録
+#ifdef ENABLE_PERF_MEASUREMENT
                 interest_times_[{std::string(data.content_name), next_chunk}] = now_fwd;
+#endif
             }
         } else if (has_pit_entry) {
             pit_.erase(pit_it);
@@ -338,8 +351,8 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
             // チャンク数が多すぎる場合はログ警告（チャンク番号は追加しない）
             static constexpr size_t MAX_PENDING_CHUNKS = 256;
             if (it->second.pending_chunks.size() >= MAX_PENDING_CHUNKS) {
-                std::cerr << "[WARN] Too many pending chunks for: " << content_name
-                          << " — discarding chunk " << chunk_num << std::endl;
+                LOG_WARN("Too many pending chunks for: " << content_name
+                         << " — discarding chunk " << chunk_num);
                 return;
             }
             it->second.pending_chunks.push(chunk_num);
@@ -375,6 +388,8 @@ void MainController::onInterest(const std::string& uri, uint32_t chunk_num) {
         entry.time = now;
         entry.pending_chunks.push(chunk_num);
         // 計測開始: CSヒット以外でICSNに転送した時刻を記録
+#ifdef ENABLE_PERF_MEASUREMENT
         interest_times_[{content_name, chunk_num}] = now;
+#endif
     }
 }
