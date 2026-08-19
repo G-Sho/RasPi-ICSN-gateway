@@ -226,8 +226,8 @@ private:
 **使用例：**
 ```cpp
 // 起動時の静的登録
-fib_->save("/sensor/temp", {"AA:BB:CC:DD:EE:01"});
-fib_->save("/sensor", {"FF:FF:FF:FF:FF:FF"});  // ブロードキャスト
+fib_->save("/sensor/temp", {"SAMPLE_MAC"});
+fib_->save("/sensor", {"BROADCAST_MAC"});  // ブロードキャスト
 
 // Data受信時の動的学習
 void onRxPacket(const RxPacket& packet) {
@@ -344,7 +344,7 @@ private:
 ```
 RX:<送信者MAC>|<データ長>|<Base64エンコードデータ>\n
 
-例: RX:AA:BB:CC:DD:EE:FF|42|SGVsbG8gV29ybGQhCg==\n
+例: RX:SAMPLE_MAC|42|BASE64_PAYLOAD\n
 ```
 
 **送信フォーマット (RasPi → ESP32):**

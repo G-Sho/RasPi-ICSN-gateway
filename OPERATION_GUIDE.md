@@ -31,7 +31,7 @@ Raspberry Pi - ICSN ゲートウェイの動作確認手順をまとめたドキ
 | ESP32 ブリッジノード | UART 経由で Raspberry Pi と通信 |
 | USB-UART 変換アダプタ（任意） | PC からの UART 確認用 |
 
-> **補足**: Raspberry Pi 5 では I/O が RP1 チップ経由になっており、GPIO の UART（UART0）は `/dev/ttyAMA0` → `/dev/serial0` としてアクセスします。Bluetooth は RP1 内部の別 UART で動作するため、`dtoverlay=disable-bt` を適用することで UART0 をアプリケーション専用にできます。
+> **補足**: Raspberry Pi 環境では、GPIO の UART は一般に `/dev/serial0` として公開されます。UART をアプリケーション用に割り当てるには、対象の OS でシリアル設定を確認し、必要に応じて Bluetooth を無効化します。
 
 ### ソフトウェア
 
@@ -73,12 +73,12 @@ sudo raspi-config
 #   「シリアルポートハードウェアを有効にしますか？」  -> Yes
 ```
 
-> **Raspberry Pi 5 の設定ファイルパスについて**: Raspberry Pi OS Bookworm では、ブート設定ファイルのパスが `/boot/config.txt` から `/boot/firmware/config.txt` に変更されています。
+> **注意**: Raspberry Pi のシリアル設定は OS によりブート設定ファイルの場所が変わります。UART を有効にする場合は、対象の Raspberry Pi でシリアル設定を確認したうえで、必要な値を追加または変更してください。
 
-`/boot/firmware/config.txt` を編集して Bluetooth を無効化し、UART0 をアプリケーション専用にします。
+Raspberry Pi のブート設定ファイルを編集して、UART を有効化し、必要に応じて Bluetooth を無効にします。
 
 ```bash
-sudo nano /boot/firmware/config.txt
+sudo nano /boot/config.txt
 ```
 
 以下を追加（または既存行を変更）：
@@ -210,14 +210,14 @@ sudo ./gateway /dev/ttyAMA0 115200
 === Raspberry Pi CEFORE Gateway ===
 UART Device: /dev/serial0
 Baudrate: 115200
-FIB Config: ../config/test_fib.conf
+FIB Config: ./config/test_fib.conf
 ===================================
 [INFO] Creating components...
 [INFO] Initializing CEFORE...
-[INFO] Loading initial FIB from: ../config/test_fib.conf
-[INFO] Static FIB: /iot/buildingA/room101 -> CC:7B:5C:9A:F3:C4
+[INFO] Loading initial FIB from: ./config/test_fib.conf
+[INFO] Static FIB: /example/prefix -> SAMPLE_MAC
 [INFO] Loaded 1 static FIB entries
-[INFO] Registered prefix: ccnx:/iot/buildingA/room101
+[INFO] Registered prefix: ccnx:/example/prefix
 [INFO] Gateway initialized successfully
 [INFO] Gateway running... Press Ctrl+C to stop
 ```
@@ -239,13 +239,13 @@ FIB Config: ../config/test_fib.conf
 sudo apt-get install -y socat
 
 # 仮想シリアルポートペアを作成（別ターミナルで実行）
-socat PTY,link=/tmp/virtual-esp32,rawer PTY,link=/tmp/virtual-raspi,rawer &
+socat PTY,link=./serial-a,rawer PTY,link=./serial-b,rawer &
 
 # ゲートウェイをカスタムデバイスで起動（別ターミナル）
-sudo ./gateway /tmp/virtual-raspi 115200 ../config/test_fib.conf
+sudo ./gateway ./serial-b 115200 ./config/test_fib.conf
 
 # テストパケット送信（Python で ICSN の CommunicationData 構造体を生成）
-python3 /tmp/send_test_packet.py /tmp/virtual-esp32
+python3 ./send_test_packet.py ./serial-a
 ```
 
 テストパケット送信スクリプト（`/tmp/send_test_packet.py`）を作成して実行します。
@@ -281,11 +281,11 @@ def build_icsn_packet(signal_code: str, content_name: str, content: str) -> byte
     )
     return pkt
 
-device = sys.argv[1] if len(sys.argv) > 1 else '/tmp/virtual-esp32'
-mac = 'AA:BB:CC:DD:EE:FF'
+device = sys.argv[1] if len(sys.argv) > 1 else './serial-a'
+mac = 'SAMPLE_MAC'
 
 with serial.Serial(device, 115200, timeout=1) as ser:
-    pkt = build_icsn_packet('DATA', '/icsn/sensor/temp', '25.3')
+    pkt = build_icsn_packet('DATA', '/example/sensor/temp', '25.3')
     encoded = base64.b64encode(pkt).decode()
     line = f'RX:{mac}|{len(pkt)}|{encoded}\n'
     print(f'送信: {line.strip()}')
@@ -303,8 +303,8 @@ ESP32 ブリッジファームウェアが動作していれば、センサー�
 ゲートウェイログに以下が出力されます。
 
 ```
-[INFO] Received DATA from AA:BB:CC:DD:EE:FF: /icsn/sensor/temp = 25.3
-[INFO] Published to CEFORE: /icsn/sensor/temp/1713430617
+[INFO] Received DATA from SAMPLE_MAC: /example/sensor/temp = 25.3
+[INFO] Published to CEFORE: ccnx:/example/sensor/temp/<timestamp>
 ```
 
 ---
@@ -317,8 +317,8 @@ ESP32 ブリッジファームウェアが動作していれば、センサー�
 
 ```bash
 # CEFORE の cefgetfile コマンドでデータを取得
-# （タイムスタンプ付きの名前で問い合わせる）
-cefgetfile ccnx:/icsn/sensor/temp/<タイムスタンプ> -o /tmp/result.txt
+# （タイムスタンプ付きの名称なので、実際のコンテンツ名を確認して問い合わせる）
+cefgetfile ccnx:/example/sensor/temp/<timestamp> -o /tmp/result.txt
 cat /tmp/result.txt
 ```
 
@@ -331,7 +331,7 @@ import time
 
 with cefpyco.create_handle() as handle:
     # Interest を送信
-    handle.send_interest("ccnx:/icsn/sensor/temp", 0)
+    handle.send_interest("ccnx:/example/sensor/temp", 0)
     # Data を受信
     info = handle.receive(timeout_ms=5000)
     if info.is_succeeded:
@@ -356,7 +356,7 @@ CEFORE から Interest を送信し、ゲートウェイが ESP32 へ転送す�
 
 ```bash
 # cefgetfile でゲートウェイが登録しているプレフィックスに Interest を送信
-cefgetfile ccnx:/icsn/sensor/temp -o /dev/null
+cefgetfile ccnx:/example/sensor/temp -o /dev/null
 ```
 
 または cefpyco を使う場合：
@@ -366,7 +366,7 @@ cefgetfile ccnx:/icsn/sensor/temp -o /dev/null
 import cefpyco
 
 with cefpyco.create_handle() as handle:
-    handle.send_interest("ccnx:/icsn/sensor/temp", 0)
+    handle.send_interest("ccnx:/example/sensor/temp", 0)
     print("Interest 送信完了")
 ```
 
@@ -375,22 +375,22 @@ with cefpyco.create_handle() as handle:
 ゲートウェイのログに以下が出力されれば正常です。
 
 ```
-[INFO] Received Interest: ccnx:/icsn/sensor/temp (chunk=0)
-[INFO] Forwarded Interest to AA:BB:CC:DD:EE:FF: /icsn/sensor/temp
+[INFO] Received Interest: ccnx:/example/sensor/temp (chunk=0)
+[INFO] Forwarded Interest to SAMPLE_MAC: /example/sensor/temp
 ```
 
 または、FIB にエントリがない場合はブロードキャストになります。
 
 ```
-[WARN] No FIB entry found for: /icsn/sensor/temp
+[WARN] No FIB entry found for: /example/sensor/temp
 [INFO] Broadcasting Interest to all nodes
-[INFO] Forwarded Interest to FF:FF:FF:FF:FF:FF: /icsn/sensor/temp
+[INFO] Forwarded Interest to BROADCAST_MAC: /example/sensor/temp
 ```
 
 ESP32 側では UART で以下のフォーマットのデータが受信されます。
 
 ```
-TX:AA:BB:CC:DD:EE:FF|<Base64エンコードされたICSN-INTERESTパケット>\n
+TX:SAMPLE_MAC|<Base64エンコードされたICSN-INTERESTパケット>\n
 ```
 
 ---
@@ -480,8 +480,8 @@ Error opening /dev/serial0: No such file or directory
 
 **対処：**
 
-1. `raspi-config` で Serial Port Hardware を有効化
-2. `/boot/firmware/config.txt` に `enable_uart=1` と `dtoverlay=disable-bt` を追加
+1. `raspi-config` または対象 OS の設定画面でシリアルポートを有効化
+2. Raspberry Pi のブート設定ファイルに `enable_uart=1` と必要に応じて `dtoverlay=disable-bt` を追加
 3. 再起動
 
 ---

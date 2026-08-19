@@ -61,9 +61,9 @@ bool MainController::initialize(const std::string& uart_device, int baudrate,
     std::cout << "[INFO] Registering CEFORE prefixes..." << std::endl;
 
     // ICSNセンサーのルートプレフィックスを登録
-    // 実際のセンサー名に応じて変更
+    // 実置き換えの具体的な名前ではなく、サンプル名を使って説明する
     const char* prefixes[] = {
-        "ccnx:/iot/buildingA/room101",
+        "ccnx:/example/sensor",
         nullptr
     };
 

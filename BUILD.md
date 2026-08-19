@@ -1,119 +1,104 @@
-# ビルド手順
+# Build guide
 
-## 前提条件
+This repository builds a Raspberry Pi gateway executable that links against CEFORE libraries and runs as a local service bridging UART-based ICSN traffic and CEFORE-controlled NDN traffic.
 
-### 必要なライブラリ
+## Prerequisites
 
-1. **CEFORE** (libcefore)
-   ```bash
-   # CEFOREをソースまたはパッケージマネージャからインストール
-   # 参照: https://cefore.net/
-   ```
+- CEFORE installed and available on the target system
+- CMake 3.10 or newer
+- C++17 compiler
+- OpenSSL development libraries
+- pthread / dl support
 
-2. **ビルドツール**
-   ```bash
-   sudo apt-get update
-   sudo apt-get install -y build-essential cmake git
-   ```
+The project expects a CEFORE installation under a standard prefix such as `/usr/local`, or a custom prefix specified at configure time.
 
-## ビルド手順
+## Install CEFORE
 
-1. リポジトリをクローン
-   ```bash
-   git clone <repository-url>
-   cd RasPi-ICSN-gateway
-   ```
+Follow the CEFORE installation instructions from the CEFORE project. The build uses the `cefore` library and expects the headers and shared library to be available under the configured CEFORE root.
 
-2. ビルドディレクトリを作成
-   ```bash
-   mkdir build
-   cd build
-   ```
+## Configure the build
 
-3. CMakeで設定
-   ```bash
-   cmake ..
-   ```
-
-4. ビルド
-   ```bash
-   make
-   ```
-
-5. インストール（オプション）
-   ```bash
-   sudo make install
-   ```
-
-## 実行方法
-
-### 基本的な使い方
+From the repository root:
 
 ```bash
-sudo ./gateway /dev/serial0 115200
+mkdir -p build
+cd build
+cmake -DCEFORE_ROOT=/path/to/cefore ..
 ```
 
-### コマンドライン引数
+If `CEFORE_ROOT` is not specified, the project defaults to `/usr/local` as shown in [CMakeLists.txt](CMakeLists.txt).
 
-- `argv[1]`: UARTデバイスパス（デフォルト: `/dev/serial0`）
-- `argv[2]`: ボーレート（デフォルト: `115200`）
-
-### 実行例
+## Build
 
 ```bash
-# デフォルト設定で実行
-sudo ./gateway
-
-# カスタムUARTデバイスとボーレートで実行
-sudo ./gateway /dev/ttyUSB0 115200
+make -j$(nproc)
 ```
 
-## Raspberry PiのUART設定
+The resulting binary is named `gateway` and is produced at:
 
-1. GPIOピンのUARTを有効化
-   ```bash
-   sudo raspi-config
-   # 移動先: Interface Options -> Serial Port
-   # シリアルログインシェルを無効化: No
-   # シリアルポートハードウェアを有効化: Yes
-   ```
-
-2. `/boot/config.txt`を編集
-   ```bash
-   sudo nano /boot/config.txt
-   ```
-
-   以下を追加または変更:
-   ```
-   enable_uart=1
-   dtoverlay=disable-bt
-   ```
-
-3. 再起動
-   ```bash
-   sudo reboot
-   ```
-
-## トラブルシューティング
-
-### CEFOREが見つからない場合
-
-CMakeがCEFOREを見つけられない場合:
 ```bash
-# CEFOREのインストールパスを指定
-cmake -DCEFORE_INCLUDE=/path/to/cefore/include -DCEFORE_LIB=/path/to/cefore/lib ..
+./gateway
 ```
 
-### UART権限エラー
+## Run
+
+Before starting the gateway, ensure that `cefnetd` is already running.
+
+```bash
+sudo ./gateway /dev/serial0 115200 ./config/test_fib.conf
+```
+
+Argument summary:
+
+1. UART device path (for example `/dev/serial0`)
+2. UART baud rate (for example `115200`)
+3. Optional initial FIB config file path
+
+Example:
+
+```bash
+sudo ./gateway /dev/ttyUSB0 115200 ./config/test_fib.conf
+```
+
+## UART configuration
+
+The gateway expects the Raspberry Pi serial interface to be available on the selected UART device. Common examples are:
+
+```bash
+ls -l /dev/serial0
+ls -l /dev/ttyAMA0
+ls -l /dev/ttyUSB0
+```
+
+If the serial port is not accessible, add the current user to the `dialout` group:
 
 ```bash
 sudo usermod -a -G dialout $USER
-# ログアウトして再度ログイン
 ```
 
-### cefnetdが起動していない場合
+Then log out and log back in before retrying.
 
-ゲートウェイを起動する前にcefnetdが起動していることを確認:
+## CEFORE lookup troubleshooting
+
+If CMake cannot find the CEFORE library, specify the installation root explicitly:
+
 ```bash
-sudo cefnetd
+cmake -DCEFORE_ROOT=/opt/cefore ..
 ```
+
+This is the expected configuration path for the project and matches the logic in [CMakeLists.txt](CMakeLists.txt).
+
+## Operational notes
+
+The gateway does not replace `cefnetd`; it connects to it through the `CeforeInterface` layer. In practice:
+
+- `cefnetd` must be running before the gateway starts
+- the gateway registers the relevant relevant prefixes using the CEFORE client API
+- the gateway forwards ICSN requests to the UART side and publishes CEFORE Data through the same runtime loop
+
+## Related documents
+
+- [README.md](README.md)
+- [OPERATION_GUIDE.md](OPERATION_GUIDE.md)
+- [raspi-gateway-design.md](raspi-gateway-design.md)
+- [CMakeLists.txt](CMakeLists.txt)
